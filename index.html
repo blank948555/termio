@@ -51,18 +51,31 @@
     <!-- compact top bar -->
     <header class="topbar">
       <div class="topbar-left">
-        <button id="menu-btn" class="icon-btn" type="button" aria-label="Settings">
-          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-            <path fill="currentColor" d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm8.94 4a1 1 0 0 0-.25-1.6l-1.6-.9a1 1 0 0 1-.5-1.18l.5-1.78a1 1 0 0 0-1.18-1.25l-1.78.5a1 1 0 0 1-1.18-.5l-.9-1.6a1 1 0 0 0-1.7 0l-.9 1.6a1 1 0 0 1-1.18.5l-1.78-.5a1 1 0 0 0-1.18 1.25l.5 1.78a1 1 0 0 1-.5 1.18l-1.6.9a1 1 0 0 0 0 1.7l1.6.9a1 1 0 0 1 .5 1.18l-.5 1.78a1 1 0 0 0 1.18 1.25l1.78-.5a1 1 0 0 1 1.18.5l.9 1.6a1 1 0 0 0 1.7 0l.9-1.6a1 1 0 0 1 1.18-.5l1.78.5a1 1 0 0 0 1.18-1.25l-.5-1.78a1 1 0 0 1 .5-1.18l1.6-.9a1 1 0 0 0 .25-1.6z"/>
-          </svg>
-        </button>
-        <span class="app-title">Termio</span>
-        <span class="badge badge-beta badge-sm">BETA</span>
+        <div class="brand-group">
+          <span class="mascot-prompt" aria-hidden="true">&gt;_</span>
+          <span class="app-title">Termio</span>
+          <span class="badge badge-beta badge-sm">BETA</span>
+        </div>
       </div>
       <div class="topbar-right">
         <button id="model-btn" class="model-pill" type="button" aria-haspopup="dialog" aria-label="Select model">
           <span id="model-pill-name" class="model-pill-name">Model…</span>
           <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="m7 10 5 5 5-5z"/></svg>
+        </button>
+        <button id="history-btn" class="icon-btn" type="button" aria-label="Session History" title="Session History">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <path fill="currentColor" d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6a7 7 0 1 1 2.05 4.95l-1.42 1.42A8.95 8.95 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5l4.25 2.52.77-1.28-3.52-2.09V8z"/>
+          </svg>
+        </button>
+        <button id="new-session-btn" class="icon-btn" type="button" aria-label="New Session" title="New Session">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+          </svg>
+        </button>
+        <button id="menu-btn" class="icon-btn" type="button" aria-label="Settings" title="Settings">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <path fill="currentColor" d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm8.94 4a1 1 0 0 0-.25-1.6l-1.6-.9a1 1 0 0 1-.5-1.18l.5-1.78a1 1 0 0 0-1.18-1.25l-1.78.5a1 1 0 0 1-1.18-.5l-.9-1.6a1 1 0 0 0-1.7 0l-.9 1.6a1 1 0 0 1-1.18.5l-1.78-.5a1 1 0 0 0-1.18 1.25l.5 1.78a1 1 0 0 1-.5 1.18l-1.6.9a1 1 0 0 0 0 1.7l1.6.9a1 1 0 0 1 .5 1.18l-.5 1.78a1 1 0 0 0 1.18 1.25l1.78-.5a1 1 0 0 1 1.18.5l.9 1.6a1 1 0 0 0 1.7 0l.9-1.6a1 1 0 0 1 1.18-.5l1.78.5a1 1 0 0 0 1.18-1.25l-.5-1.78a1 1 0 0 1 .5-1.18l1.6-.9a1 1 0 0 0 .25-1.6z"/>
+          </svg>
         </button>
       </div>
     </header>
@@ -103,6 +116,25 @@
     </div>
   </div>
 
+  <!-- ===================== SESSION HISTORY ===================== -->
+  <div id="history-modal" class="modal" role="dialog" aria-modal="true" aria-label="Session History" hidden>
+    <div class="modal-panel">
+      <header class="modal-head">
+        <h2>Session History</h2>
+        <div class="head-actions">
+          <button id="history-new-btn" class="btn btn-sm btn-ghost" type="button">+ New Session</button>
+          <button id="history-close" class="icon-btn" type="button" aria-label="Close">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M18.3 5.7 12 12l6.3 6.3-1.4 1.4L10.6 13.4 4.3 19.7 2.9 18.3 9.2 12 2.9 5.7 4.3 4.3l6.3 6.3 6.3-6.3z"/></svg>
+          </button>
+        </div>
+      </header>
+      <div id="history-list" class="history-list"></div>
+      <div id="history-foot" class="modal-foot">
+        <span>Stored in browser IndexedDB</span>
+      </div>
+    </div>
+  </div>
+
   <!-- ===================== SETTINGS ===================== -->
   <div id="settings" class="modal" role="dialog" aria-modal="true" aria-label="Settings" hidden>
     <div class="modal-panel">
@@ -115,18 +147,27 @@
 
       <div class="settings-body">
         <section class="settings-section">
-          <h3 class="settings-h">OpenRouter</h3>
+          <h3 class="settings-h">OpenRouter API Key</h3>
+          <div class="key-status-row">
+            <span class="field-label">Status:</span>
+            <span id="key-status-badge" class="badge">Checking…</span>
+          </div>
           <label class="field">
-            <span class="field-label">API key</span>
+            <span class="field-label">Update API key</span>
             <div class="key-row">
-              <input id="set-key" type="password" autocomplete="off" spellcheck="false" placeholder="sk-or-v1-…" />
-              <button id="set-key-toggle" class="btn btn-ghost" type="button" aria-label="Show key">show</button>
+              <input id="set-key" type="password" autocomplete="off" spellcheck="false" placeholder="Enter new sk-or-v1-… key" />
+              <button id="set-key-save" class="btn btn-primary" type="button">Save Key</button>
             </div>
-            <span class="field-hint">Stored on this device only.</span>
+            <span class="field-hint">Stored securely on this device only. Never displayed.</span>
           </label>
+          <div class="key-actions">
+            <button id="set-key-clear" class="btn btn-ghost btn-sm" type="button">Clear API Key</button>
+          </div>
+        </section>
 
+        <section class="settings-section">
+          <h3 class="settings-h">Model</h3>
           <label class="field">
-            <span class="field-label">Model</span>
             <button id="set-model" class="model-pill model-pill-wide" type="button">
               <span id="set-model-name" class="model-pill-name">Model…</span>
               <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="m7 10 5 5 5-5z"/></svg>
@@ -147,9 +188,9 @@
         </section>
 
         <section class="settings-section">
-          <h3 class="settings-h">Data</h3>
-          <button id="set-clear-session" class="btn btn-ghost" type="button">Clear terminal session</button>
-          <button id="set-reset" class="btn btn-danger" type="button">Reset all Termio data</button>
+          <h3 class="settings-h">Data & Sessions</h3>
+          <button id="set-clear-session" class="btn btn-ghost" type="button">Start New Session</button>
+          <button id="set-reset" class="btn btn-danger" type="button">Reset All Termio Data</button>
         </section>
 
         <section class="settings-section">
@@ -161,6 +202,18 @@
             Runtime resources can be limited and may change during the beta.
           </p>
         </section>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== CUSTOM CONFIRMATION MODAL ===================== -->
+  <div id="confirm-modal" class="modal modal-dialog" role="dialog" aria-modal="true" aria-label="Confirmation" hidden>
+    <div class="confirm-panel">
+      <h3 id="confirm-title" class="confirm-title">Confirm Action</h3>
+      <p id="confirm-message" class="confirm-message">Are you sure you want to proceed?</p>
+      <div class="confirm-actions">
+        <button id="confirm-cancel-btn" class="btn btn-ghost" type="button">Cancel</button>
+        <button id="confirm-ok-btn" class="btn btn-danger" type="button">Confirm</button>
       </div>
     </div>
   </div>

@@ -6,9 +6,10 @@
   "use strict";
 
   const DB_NAME = "termio";
-  const DB_VERSION = 1;
-  const STORE_KV = "kv";        // settings: setupDone, apiKey, model, prefs
-  const STORE_HISTORY = "history"; // terminal session history (chronological)
+  const DB_VERSION = 2;
+  const STORE_KV = "kv";            // settings: setupDone, apiKey, model, prefs, activeSessionId
+  const STORE_HISTORY = "history";  // individual terminal command logs
+  const STORE_SESSIONS = "sessions"; // multi-session persistent objects
 
   let dbPromise = null;
   const memCache = {}; // settings mirror
@@ -25,6 +26,10 @@
         if (!db.objectStoreNames.contains(STORE_HISTORY)) {
           const hs = db.createObjectStore(STORE_HISTORY, { keyPath: "id", autoIncrement: true });
           hs.createIndex("ts", "ts", { unique: false });
+        }
+        if (!db.objectStoreNames.contains(STORE_SESSIONS)) {
+          const ss = db.createObjectStore(STORE_SESSIONS, { keyPath: "id" });
+          ss.createIndex("updatedAt", "updatedAt", { unique: false });
         }
       };
       req.onsuccess = () => resolve(req.result);
@@ -80,6 +85,41 @@
     for (const k in memCache) delete memCache[k];
   }
 
+  // ---- sessions ----
+  async function saveSession(session) {
+    if (!session || !session.id) return null;
+    const db = await openDB();
+    const record = Object.assign({}, session, { updatedAt: Date.now() });
+    if (!record.createdAt) record.createdAt = Date.now();
+    await reqToPromise(tx(db, STORE_SESSIONS, "readwrite").put(record));
+    return record;
+  }
+
+  async function getSession(id) {
+    if (!id) return null;
+    const db = await openDB();
+    const sess = await reqToPromise(tx(db, STORE_SESSIONS, "readonly").get(id));
+    return sess || null;
+  }
+
+  async function getAllSessions() {
+    const db = await openDB();
+    const all = await reqToPromise(tx(db, STORE_SESSIONS, "readonly").getAll());
+    all.sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
+    return all;
+  }
+
+  async function deleteSession(id) {
+    if (!id) return;
+    const db = await openDB();
+    await reqToPromise(tx(db, STORE_SESSIONS, "readwrite").delete(id));
+  }
+
+  async function clearAllSessions() {
+    const db = await openDB();
+    await reqToPromise(tx(db, STORE_SESSIONS, "readwrite").clear());
+  }
+
   // ---- history ----
   async function addHistory(entry) {
     const db = await openDB();
@@ -105,6 +145,7 @@
     const db = await openDB();
     await reqToPromise(tx(db, STORE_KV, "readwrite").clear());
     await reqToPromise(tx(db, STORE_HISTORY, "readwrite").clear());
+    await reqToPromise(tx(db, STORE_SESSIONS, "readwrite").clear());
     for (const k in memCache) delete memCache[k];
   }
 
@@ -114,6 +155,11 @@
     delSetting,
     getAllSettings,
     clearSettings,
+    saveSession,
+    getSession,
+    getAllSessions,
+    deleteSession,
+    clearAllSessions,
     addHistory,
     getHistory,
     clearHistory,
@@ -121,3 +167,4 @@
     _mem: memCache,
   };
 })(window);
+

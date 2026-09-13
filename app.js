@@ -1,4 +1,4 @@
-/* app.js — Termio app logic: setup, settings, terminal, model picker, history. */
+/* app.js — Termio app logic: setup, settings, terminal, model picker, multi-session history, security. */
 (function () {
   "use strict";
 
@@ -10,9 +10,15 @@
   const $app = el("app");
   const $setupForm = el("setup-form");
   const $setupKey = el("setup-key");
+
+  // topbar
   const $menuBtn = el("menu-btn");
+  const $historyBtn = el("history-btn");
+  const $newSessionBtn = el("new-session-btn");
   const $modelBtn = el("model-btn");
   const $modelPillName = el("model-pill-name");
+
+  // terminal
   const $term = el("term");
   const $termOutput = el("term-output");
   const $termWelcome = el("term-welcome");
@@ -31,14 +37,29 @@
   // settings
   const $settings = el("settings");
   const $settingsClose = el("settings-close");
+  const $keyStatusBadge = el("key-status-badge");
   const $setKey = el("set-key");
-  const $setKeyToggle = el("set-key-toggle");
+  const $setKeySave = el("set-key-save");
+  const $setKeyClear = el("set-key-clear");
   const $setModel = el("set-model");
   const $setModelName = el("set-model-name");
   const $setClear = el("set-clear");
   const $setHeaders = el("set-headers");
   const $setClearSession = el("set-clear-session");
   const $setReset = el("set-reset");
+
+  // session history
+  const $historyModal = el("history-modal");
+  const $historyClose = el("history-close");
+  const $historyList = el("history-list");
+  const $historyNewBtn = el("history-new-btn");
+
+  // confirm modal
+  const $confirmModal = el("confirm-modal");
+  const $confirmTitle = el("confirm-title");
+  const $confirmMessage = el("confirm-message");
+  const $confirmCancelBtn = el("confirm-cancel-btn");
+  const $confirmOkBtn = el("confirm-ok-btn");
 
   // ---- app state ----
   const state = {
@@ -50,11 +71,14 @@
     modelsCacheAt: 0,
     activeCat: "all",
     search: "",
-    conversation: [],       // Responses API input history (messages + tool calls/outputs)
-    sessionId: null,        // OpenRouter sticky session id (preserves shell container)
+    activeSession: null,   // active session object
+    conversation: [],      // Responses API input history
+    sessionId: null,       // OpenRouter sticky session container id
     running: false,
     abortCtrl: null,
   };
+
+  let welcomeTimer = null;
 
   const CAT_LABELS = { all: "All", free: "Free", cheap: "Cheap", fast: "Fast", premium: "Premium" };
 
@@ -64,6 +88,13 @@
     $toast.hidden = false;
     clearTimeout(toast._t);
     toast._t = setTimeout(() => { $toast.hidden = true; }, ms || 2400);
+  }
+
+  function escapeHtml(str) {
+    return String(str || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
   }
 
   function fmtPrice(m) {
@@ -84,12 +115,54 @@
     return c + " ctx";
   }
 
+  function fmtTime(ts) {
+    if (!ts) return "";
+    const diff = Date.now() - ts;
+    if (diff < 60000) return "Just now";
+    if (diff < 3600000) return Math.floor(diff / 60000) + "m ago";
+    if (diff < 86400000) return Math.floor(diff / 3600000) + "h ago";
+    const d = new Date(ts);
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) +
+      " " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  }
+
   function modelDisplayName(m) {
     return (m && (m.name || OpenRouter.shortName(m))) || "Model…";
   }
 
   function findModelById(id) {
     return state.models.find((m) => m.id === id) || null;
+  }
+
+  // ---- Custom Confirmation Modal ----
+  function showConfirmModal({ title, message, confirmText = "Confirm", cancelText = "Cancel", danger = true }) {
+    return new Promise((resolve) => {
+      $confirmTitle.textContent = title || "Confirm Action";
+      $confirmMessage.textContent = message || "Are you sure you want to proceed?";
+      $confirmOkBtn.textContent = confirmText;
+      $confirmCancelBtn.textContent = cancelText;
+
+      if (danger) {
+        $confirmOkBtn.className = "btn btn-danger";
+      } else {
+        $confirmOkBtn.className = "btn btn-primary";
+      }
+
+      $confirmModal.hidden = false;
+
+      function cleanup(result) {
+        $confirmModal.hidden = true;
+        $confirmOkBtn.removeEventListener("click", onOk);
+        $confirmCancelBtn.removeEventListener("click", onCancel);
+        resolve(result);
+      }
+
+      function onOk() { cleanup(true); }
+      function onCancel() { cleanup(false); }
+
+      $confirmOkBtn.addEventListener("click", onOk);
+      $confirmCancelBtn.addEventListener("click", onCancel);
+    });
   }
 
   // ---- terminal rendering ----
@@ -146,6 +219,91 @@
     return meta;
   }
 
+  function appendBlockRecord(record) {
+    if (!state.activeSession) return;
+    if (!state.activeSession.blocks) state.activeSession.blocks = [];
+    state.activeSession.blocks.push(record);
+  }
+
+  function restoreSessionBlocks(blocks) {
+    $termOutput.innerHTML = "";
+    if (!Array.isArray(blocks) || blocks.length === 0) return;
+
+    let currentBlock = null;
+    for (const b of blocks) {
+      if (!b) continue;
+      if (b.kind === "cmd") {
+        currentBlock = document.createElement("div");
+        currentBlock.className = "term-block";
+        currentBlock.appendChild(mkCmdLine(b.text));
+        $termOutput.appendChild(currentBlock);
+      } else {
+        if (!currentBlock) {
+          currentBlock = document.createElement("div");
+          currentBlock.className = "term-block";
+          $termOutput.appendChild(currentBlock);
+        }
+        if (b.kind === "out") {
+          currentBlock.appendChild(mkOut(b.text, b.cls));
+        } else if (b.kind === "meta") {
+          currentBlock.appendChild(mkMeta(b.parts || []));
+        }
+      }
+    }
+    scrollTerm();
+  }
+
+  // ---- welcome animation ----
+  function renderWelcome(animate = false) {
+    if (welcomeTimer) { clearTimeout(welcomeTimer); welcomeTimer = null; }
+    if ($termOutput.children.length > 0) {
+      $termWelcome.hidden = true;
+      return;
+    }
+
+    $termWelcome.hidden = false;
+    $termWelcome.innerHTML = "";
+
+    const lines = [
+      "TERMIO v1.0 [OpenRouter Hosted Shell]",
+      "Connected to isolated Linux environment.",
+      "Enter a command or ask the terminal to begin."
+    ];
+
+    if (!animate) {
+      $termWelcome.innerHTML = lines.map((l, i) =>
+        `<div class="${i === 0 ? 'term-welcome-line' : 'term-welcome-sub'}">${escapeHtml(l)}</div>`
+      ).join("");
+      return;
+    }
+
+    let lineIdx = 0;
+    let charIdx = 0;
+    const lineNodes = lines.map((l, i) => {
+      const div = document.createElement("div");
+      div.className = i === 0 ? "term-welcome-line" : "term-welcome-sub";
+      $termWelcome.appendChild(div);
+      return div;
+    });
+
+    function typeNext() {
+      if (lineIdx >= lines.length) return;
+      const targetText = lines[lineIdx];
+      charIdx += 2;
+      if (charIdx > targetText.length) charIdx = targetText.length;
+      lineNodes[lineIdx].textContent = targetText.slice(0, charIdx);
+
+      if (charIdx < targetText.length) {
+        welcomeTimer = setTimeout(typeNext, 12);
+      } else {
+        lineIdx++;
+        charIdx = 0;
+        welcomeTimer = setTimeout(typeNext, 40);
+      }
+    }
+    typeNext();
+  }
+
   // ---- boot ----
   async function boot() {
     try {
@@ -155,7 +313,7 @@
     }
     const setupDone = Storage._mem.setupDone === true;
     if (setupDone) {
-      showApp();
+      await showApp();
     } else {
       showSetup();
     }
@@ -167,31 +325,41 @@
     $app.hidden = true;
     $picker.hidden = true;
     $settings.hidden = true;
-    setTimeout(() => $setupKey.focus(), 50);
+    $historyModal.hidden = true;
   }
 
-  function showApp() {
+  async function showApp() {
     state.apiKey = Storage._mem.apiKey || null;
     state.modelId = Storage._mem.model || null;
     const prefs = Storage._mem.prefs || {};
     if (prefs && typeof prefs === "object") {
       state.prefs = Object.assign(state.prefs, prefs);
     }
-    state.sessionId = Storage._mem.sessionId || null;
 
     $setup.hidden = true;
     $app.hidden = false;
 
-    // reflect model pill
     renderModelPill();
 
-    // load catalog in background (uses key if present; catalog is public)
+    // Load active session or create a new session
+    const activeSessionId = Storage._mem.activeSessionId || null;
+    let loaded = null;
+    if (activeSessionId) {
+      try { loaded = await Storage.getSession(activeSessionId); } catch (e) {}
+    }
+
+    if (loaded) {
+      setActiveSession(loaded);
+    } else {
+      await startNewSession({ playWelcome: true });
+    }
+
+    // load catalog in background
     loadModels().then(() => {
       if (state.modelId) {
         state.model = findModelById(state.modelId);
         renderModelPill();
       } else if (state.models.length) {
-        // no model selected yet → open picker so user picks one
         openPicker();
       }
     }).catch((e) => {
@@ -199,20 +367,71 @@
       toast("Could not load models");
     });
 
-    renderWelcome();
     focusInput();
   }
 
-  function renderWelcome() {
-    if ($termOutput.children.length > 0) { $termWelcome.hidden = true; return; }
-    $termWelcome.hidden = false;
-    $termWelcome.textContent = "Termio ready. Enter a command — it runs on the OpenRouter hosted Shell.";
+  function focusInput() {
+    if (!$picker.hidden || !$settings.hidden || !$historyModal.hidden || !$confirmModal.hidden) return;
+    requestAnimationFrame(() => { try { $cmdInput.focus({ preventScroll: true }); } catch (e) {} });
   }
 
-  function focusInput() {
-    // avoid stealing focus when a modal is open
-    if (!$picker.hidden || !$settings.hidden) return;
-    requestAnimationFrame(() => { try { $cmdInput.focus({ preventScroll: true }); } catch (e) {} });
+  // ---- session management ----
+  function generateSessionId() {
+    return "sess_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7);
+  }
+
+  async function startNewSession({ playWelcome = true } = {}) {
+    const newSess = {
+      id: generateSessionId(),
+      title: "New Session",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      modelId: state.modelId,
+      openrouterSessionId: null,
+      conversation: [],
+      blocks: [],
+    };
+
+    state.activeSession = newSess;
+    state.conversation = [];
+    state.sessionId = null;
+
+    $termOutput.innerHTML = "";
+    renderWelcome(playWelcome);
+
+    try {
+      await Storage.saveSession(newSess);
+      await Storage.setSetting("activeSessionId", newSess.id);
+    } catch (e) {}
+
+    return newSess;
+  }
+
+  function setActiveSession(sess) {
+    state.activeSession = sess;
+    state.conversation = sess.conversation || [];
+    state.sessionId = sess.openrouterSessionId || null;
+    if (sess.modelId && sess.modelId !== state.modelId) {
+      state.modelId = sess.modelId;
+      state.model = findModelById(sess.modelId);
+      renderModelPill();
+    }
+
+    restoreSessionBlocks(sess.blocks || []);
+    renderWelcome(false);
+  }
+
+  async function openSession(id) {
+    try {
+      const sess = await Storage.getSession(id);
+      if (sess) {
+        setActiveSession(sess);
+        await Storage.setSetting("activeSessionId", sess.id);
+        toast("Loaded session: " + sess.title);
+      }
+    } catch (e) {
+      toast("Could not load session");
+    }
   }
 
   // ---- setup ----
@@ -223,8 +442,9 @@
     try {
       await Storage.setSetting("apiKey", key);
       await Storage.setSetting("setupDone", true);
+      $setupKey.value = "";
       toast("Setup complete");
-      showApp();
+      await showApp();
     } catch (err) {
       toast("Could not save settings");
     }
@@ -237,7 +457,6 @@
       return state.models;
     }
     const models = await OpenRouter.fetchModels(state.apiKey || null);
-    // keep text-output, tool-capable models relevant; show all but sort smartly
     state.models = models.slice();
     state.modelsCacheAt = now;
     return state.models;
@@ -257,7 +476,6 @@
   function openPicker() {
     $picker.hidden = false;
     renderPicker();
-    setTimeout(() => $pickerSearch.focus(), 60);
   }
   function closePicker() {
     $picker.hidden = true;
@@ -283,7 +501,6 @@
   }
 
   function renderCats() {
-    // dynamic categories derived from current metadata
     const counts = { all: state.models.length, free: 0, cheap: 0, fast: 0, premium: 0 };
     for (const m of state.models) {
       const cats = categorizeForList(m);
@@ -292,7 +509,7 @@
     const order = ["all", "free", "cheap", "fast", "premium"];
     $pickerCats.innerHTML = "";
     for (const key of order) {
-      if (key !== "all" && counts[key] === 0) continue; // only show categories that exist
+      if (key !== "all" && counts[key] === 0) continue;
       const b = document.createElement("button");
       b.type = "button";
       b.className = "cat-btn";
@@ -323,7 +540,6 @@
     $pickerList.innerHTML = "";
     const list = visibleModels();
 
-    // sort: selected first, then by name
     list.sort((a, b) => {
       const as = a.id === state.modelId ? -1 : 0;
       const bs = b.id === state.modelId ? -1 : 0;
@@ -334,8 +550,7 @@
     });
 
     const frag = document.createDocumentFragment();
-    const cap = 300;
-    for (let i = 0; i < Math.min(list.length, cap); i++) {
+    for (let i = 0; i < list.length; i++) {
       const m = list[i];
       const item = document.createElement("button");
       item.type = "button";
@@ -388,14 +603,6 @@
       item.addEventListener("click", () => selectModel(m));
       frag.appendChild(item);
     }
-    if (list.length > cap) {
-      const more = document.createElement("div");
-      more.className = "picker-item";
-      more.style.color = "var(--muted)";
-      more.style.fontSize = "12px";
-      more.textContent = "+" + (list.length - cap) + " more — refine your search";
-      frag.appendChild(more);
-    }
     if (list.length === 0) {
       const empty = document.createElement("div");
       empty.className = "picker-item";
@@ -410,10 +617,153 @@
   async function selectModel(m) {
     state.model = m;
     state.modelId = m.id;
+    if (state.activeSession) {
+      state.activeSession.modelId = m.id;
+      try { await Storage.saveSession(state.activeSession); } catch (e) {}
+    }
     try { await Storage.setSetting("model", m.id); } catch (e) {}
     renderModelPill();
     closePicker();
     toast("Model: " + modelDisplayName(m));
+  }
+
+  // ---- history modal ----
+  $historyBtn.addEventListener("click", openHistory);
+  $newSessionBtn.addEventListener("click", async () => {
+    await startNewSession({ playWelcome: true });
+    toast("Started new session");
+  });
+  $historyClose.addEventListener("click", closeHistory);
+  $historyModal.addEventListener("click", (e) => { if (e.target === $historyModal) closeHistory(); });
+
+  $historyNewBtn.addEventListener("click", async () => {
+    await startNewSession({ playWelcome: true });
+    closeHistory();
+    toast("Started new session");
+  });
+
+  async function openHistory() {
+    $historyModal.hidden = false;
+    await renderHistoryList();
+  }
+
+  function closeHistory() {
+    $historyModal.hidden = true;
+    focusInput();
+  }
+
+  async function renderHistoryList() {
+    $historyList.innerHTML = "";
+    let sessions = [];
+    try { sessions = await Storage.getAllSessions(); } catch (e) {}
+
+    // Filter out empty sessions (no commands run)
+    const validSessions = sessions.filter((s) => {
+      if (!s) return false;
+      const cmdBlocks = (s.blocks || []).filter((b) => b && b.kind === "cmd");
+      return cmdBlocks.length > 0 || (s.conversation || []).length > 0;
+    });
+
+    if (validSessions.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "history-item";
+      empty.style.color = "var(--muted)";
+      empty.style.fontSize = "13px";
+      empty.textContent = "No saved session history yet.";
+      $historyList.appendChild(empty);
+      return;
+    }
+
+    const frag = document.createDocumentFragment();
+    for (const sess of validSessions) {
+      const item = document.createElement("div");
+      item.className = "history-item" + (state.activeSession && state.activeSession.id === sess.id ? " active" : "");
+
+      const info = document.createElement("div");
+      info.className = "history-info";
+
+      const title = document.createElement("div");
+      title.className = "history-title";
+      title.textContent = sess.title || "Session";
+
+      const meta = document.createElement("div");
+      meta.className = "history-meta";
+
+      const time = document.createElement("span");
+      time.textContent = fmtTime(sess.updatedAt || sess.createdAt);
+      meta.appendChild(time);
+
+      const cmdBlocks = (sess.blocks || []).filter((b) => b && b.kind === "cmd");
+      const count = document.createElement("span");
+      count.textContent = cmdBlocks.length + (cmdBlocks.length === 1 ? " command" : " commands");
+      meta.appendChild(count);
+
+      if (sess.modelId) {
+        const mBadge = document.createElement("span");
+        mBadge.className = "badge badge-sm";
+        mBadge.textContent = OpenRouter.shortName({ id: sess.modelId });
+        meta.appendChild(mBadge);
+      }
+
+      if (state.activeSession && state.activeSession.id === sess.id) {
+        const activeBadge = document.createElement("span");
+        activeBadge.className = "badge badge-ok badge-sm";
+        activeBadge.textContent = "ACTIVE";
+        meta.appendChild(activeBadge);
+      }
+
+      info.appendChild(title);
+      info.appendChild(meta);
+
+      const actions = document.createElement("div");
+      actions.className = "history-actions";
+
+      const openBtn = document.createElement("button");
+      openBtn.type = "button";
+      openBtn.className = "btn btn-sm btn-ghost";
+      openBtn.textContent = "Open";
+      openBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openSession(sess.id);
+        closeHistory();
+      });
+
+      const delBtn = document.createElement("button");
+      delBtn.type = "button";
+      delBtn.className = "btn btn-sm btn-danger";
+      delBtn.textContent = "Delete";
+      delBtn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const ok = await showConfirmModal({
+          title: "Delete Session",
+          message: `Delete session "${sess.title || "Session"}"? This action cannot be undone.`,
+          confirmText: "Delete",
+          danger: true
+        });
+        if (ok) {
+          await Storage.deleteSession(sess.id);
+          if (state.activeSession && state.activeSession.id === sess.id) {
+            await startNewSession({ playWelcome: true });
+          }
+          await renderHistoryList();
+          toast("Session deleted");
+        }
+      });
+
+      actions.appendChild(openBtn);
+      actions.appendChild(delBtn);
+
+      item.appendChild(info);
+      item.appendChild(actions);
+
+      item.addEventListener("click", () => {
+        openSession(sess.id);
+        closeHistory();
+      });
+
+      frag.appendChild(item);
+    }
+    $historyList.appendChild(frag);
   }
 
   // ---- settings ----
@@ -422,68 +772,104 @@
   $settings.addEventListener("click", (e) => { if (e.target === $settings) closeSettings(); });
 
   function openSettings() {
-    $setKey.value = state.apiKey || "";
-    $setKey.type = "password";
-    $setKeyToggle.textContent = "show";
+    // SECURITY: NEVER populate $setKey.value with existing state.apiKey
+    $setKey.value = "";
+    updateKeyStatusBadge();
+
     $setClear.checked = !!state.prefs.clearOnCmd;
     $setHeaders.checked = !!state.prefs.showHeaders;
     renderModelPill();
     $settings.hidden = false;
   }
+
+  function updateKeyStatusBadge() {
+    if (state.apiKey) {
+      $keyStatusBadge.textContent = "Key Configured";
+      $keyStatusBadge.className = "badge badge-ok";
+    } else {
+      $keyStatusBadge.textContent = "No Key Configured";
+      $keyStatusBadge.className = "badge badge-none";
+    }
+  }
+
   function closeSettings() {
     $settings.hidden = true;
     focusInput();
   }
 
-  $setKey.addEventListener("change", async () => {
+  $setKeySave.addEventListener("click", async () => {
     const v = $setKey.value.trim();
-    state.apiKey = v || null;
-    try {
-      if (v) await Storage.setSetting("apiKey", v);
-      else await Storage.delSetting("apiKey");
-    } catch (e) {}
-    toast(v ? "API key updated" : "API key cleared");
+    if (!v) { toast("Enter an API key"); return; }
+    state.apiKey = v;
+    try { await Storage.setSetting("apiKey", v); } catch (e) {}
+    $setKey.value = "";
+    updateKeyStatusBadge();
+    toast("API key saved");
   });
 
-  $setKeyToggle.addEventListener("click", () => {
-    if ($setKey.type === "password") { $setKey.type = "text"; $setKeyToggle.textContent = "hide"; }
-    else { $setKey.type = "password"; $setKeyToggle.textContent = "show"; }
+  $setKeyClear.addEventListener("click", async () => {
+    if (!state.apiKey) { toast("No API key configured"); return; }
+    const ok = await showConfirmModal({
+      title: "Clear API Key",
+      message: "Are you sure you want to remove your stored OpenRouter API key?",
+      confirmText: "Remove Key",
+      danger: true
+    });
+    if (ok) {
+      state.apiKey = null;
+      try { await Storage.delSetting("apiKey"); } catch (e) {}
+      updateKeyStatusBadge();
+      toast("API key removed");
+    }
   });
 
   $setClear.addEventListener("change", async () => {
     state.prefs.clearOnCmd = $setClear.checked;
     try { await Storage.setSetting("prefs", state.prefs); } catch (e) {}
   });
+
   $setHeaders.addEventListener("change", async () => {
     state.prefs.showHeaders = $setHeaders.checked;
     try { await Storage.setSetting("prefs", state.prefs); } catch (e) {}
   });
 
   $setClearSession.addEventListener("click", async () => {
-    state.conversation = [];
-    state.sessionId = null;
-    try { await Storage.delSetting("sessionId"); } catch (e) {}
-    try { await Storage.clearHistory(); } catch (e) {}
-    $termOutput.innerHTML = "";
-    renderWelcome();
-    toast("Session cleared");
+    const ok = await showConfirmModal({
+      title: "Start New Session",
+      message: "Clear current terminal view and start a fresh session context?",
+      confirmText: "New Session",
+      danger: false
+    });
+    if (ok) {
+      await startNewSession({ playWelcome: true });
+      closeSettings();
+      toast("New session started");
+    }
   });
 
   $setReset.addEventListener("click", async () => {
-    if (!confirm("Reset all Termio data (API key, model, history)? This cannot be undone.")) return;
-    try {
-      await Storage.resetAll();
-    } catch (e) {}
-    state.apiKey = null;
-    state.model = null;
-    state.modelId = null;
-    state.conversation = [];
-    state.sessionId = null;
-    state.models = [];
-    $termOutput.innerHTML = "";
-    closeSettings();
-    closePicker();
-    showSetup();
+    const ok = await showConfirmModal({
+      title: "Reset All Termio Data",
+      message: "This will permanently delete all stored sessions, API keys, and settings. This cannot be undone.",
+      confirmText: "Reset All Data",
+      danger: true
+    });
+    if (ok) {
+      try { await Storage.resetAll(); } catch (e) {}
+      state.apiKey = null;
+      state.model = null;
+      state.modelId = null;
+      state.conversation = [];
+      state.sessionId = null;
+      state.activeSession = null;
+      state.models = [];
+      $termOutput.innerHTML = "";
+      closeSettings();
+      closePicker();
+      closeHistory();
+      showSetup();
+      toast("All data reset");
+    }
   });
 
   // ---- command execution ----
@@ -509,21 +895,34 @@
       return;
     }
 
+    if (welcomeTimer) { clearTimeout(welcomeTimer); welcomeTimer = null; }
     $termWelcome.hidden = true;
+
+    if (!state.activeSession) {
+      await startNewSession({ playWelcome: false });
+    }
+
+    // Auto update session title from first command
+    if (state.activeSession.title === "New Session" || !state.activeSession.title) {
+      state.activeSession.title = cmd.length > 36 ? cmd.slice(0, 36) + "…" : cmd;
+    }
 
     if (state.prefs.clearOnCmd) {
       $termOutput.innerHTML = "";
     }
 
     const blockNodes = [];
-    if (state.prefs.showHeaders) blockNodes.push(mkCmdLine(cmd));
+    if (state.prefs.showHeaders) {
+      blockNodes.push(mkCmdLine(cmd));
+    }
     const running = mkRunning();
     blockNodes.push(running);
     const block = appendBlock(blockNodes);
 
+    appendBlockRecord({ kind: "cmd", text: cmd });
+
     setRunning(true);
 
-    // build conversation input: prior turns + this user command
     const userInput = { type: "message", role: "user", content: [{ type: "input_text", text: cmd }] };
     state.conversation.push(userInput);
     const input = state.conversation.slice();
@@ -551,20 +950,20 @@
         }),
       });
 
-      // Finalize: remove the running indicator
       running.remove();
 
       if (!gotToolOutput && !renderedText) {
-        // No shell output and no rendered message text.
         if (assistantText.trim()) {
-          // Some providers stream only deltas and no output_item.done message.
-          appendAfter(block, mkOut(assistantText.trim()));
+          const textNode = mkOut(assistantText.trim());
+          appendAfter(block, textNode);
+          appendBlockRecord({ kind: "out", text: assistantText.trim() });
         } else {
-          appendAfter(block, mkOut("[shell unavailable]", "unavail"));
+          const unavailNode = mkOut("[shell unavailable]", "unavail");
+          appendAfter(block, unavailNode);
+          appendBlockRecord({ kind: "out", text: "[shell unavailable]", cls: "unavail" });
         }
       }
 
-      // record assistant message into conversation for continuity
       if (assistantText.trim()) {
         state.conversation.push({
           type: "message", role: "assistant", id: "msg_" + Date.now(),
@@ -573,23 +972,32 @@
         });
       }
 
-      // persist meaningful activity (only after a real run)
-      persistHistory(cmd, gotToolOutput);
+      // Persist active session
+      state.activeSession.conversation = state.conversation;
+      state.activeSession.openrouterSessionId = state.sessionId;
+      state.activeSession.updatedAt = Date.now();
+      try { await Storage.saveSession(state.activeSession); } catch (e) {}
+
+      // Add to history log
+      try { await Storage.addHistory({ cmd, hadToolOutput, model: state.modelId, ts: Date.now() }); } catch (e) {}
+
     } catch (err) {
       running.remove();
       if (err && err.name === "AbortError") {
         appendAfter(block, mkOut("[aborted]", "out-dim"));
+        appendBlockRecord({ kind: "out", text: "[aborted]", cls: "out-dim" });
       } else {
         const msg = err && err.message ? err.message : "request failed";
+        let errMsg = "[error] " + msg;
         if (err && err.status === 401) {
-          appendAfter(block, mkOut("[error] " + msg + " — check your API key in Settings", "out-err"));
+          errMsg = "[error] " + msg + " — check your API key in Settings";
         } else if (err && err.status === 402) {
-          appendAfter(block, mkOut("[error] " + msg + " — insufficient OpenRouter credits", "out-err"));
-        } else {
-          appendAfter(block, mkOut("[error] " + msg, "out-err"));
+          errMsg = "[error] " + msg + " — insufficient OpenRouter credits";
         }
+        appendAfter(block, mkOut(errMsg, "out-err"));
+        appendBlockRecord({ kind: "out", text: errMsg, cls: "out-err" });
       }
-      // roll back the user turn we appended if nothing came back
+
       if (!gotToolOutput && !assistantText.trim() && state.conversation[state.conversation.length - 1] === userInput) {
         state.conversation.pop();
       }
@@ -605,6 +1013,8 @@
     $cmdInput.disabled = on;
     $modelBtn.disabled = on;
     $menuBtn.disabled = on;
+    $historyBtn.disabled = on;
+    $newSessionBtn.disabled = on;
   }
 
   function appendAfter(block, node) {
@@ -612,34 +1022,24 @@
     scrollTerm();
   }
 
-  async function persistHistory(cmd, hadToolOutput) {
-    try {
-      await Storage.addHistory({ cmd, hadToolOutput, model: state.modelId, ts: Date.now() });
-    } catch (e) {}
-  }
-
   function rememberSession(id) {
     state.sessionId = id;
+    if (state.activeSession) {
+      state.activeSession.openrouterSessionId = id;
+      try { Storage.saveSession(state.activeSession); } catch (e) {}
+    }
     try { Storage.setSetting("sessionId", id); } catch (e) {}
   }
 
   // ---- stream event handling ----
-  // OpenRouter Responses API streaming event types (from docs):
-  //  response.created, response.output_item.added, response.content_part.added,
-  //  response.content_part.delta (delta text), response.output_item.done,
-  //  response.function_call_arguments.delta/.done (tool call args),
-  //  response.done (final + usage)
-  // openrouter:shell calls surface as output items of type "openrouter:shell" /
-  // "function_call" with the tool name; their results come back as separate items
-  // produced server-side (we are NOT asked to send outputs — the server runs shell).
   function handleStreamEvent(ev, ctx) {
     if (!ev || typeof ev !== "object") return;
 
-    // explicit done/error from our parser
     if (ev.type === "done") return;
     if (ev.type === "error") {
       const m = (ev.error && ev.error.message) || "stream error";
       appendAfter(ctx.block, mkOut("[error] " + m, "out-err"));
+      appendBlockRecord({ kind: "out", text: "[error] " + m, cls: "out-err" });
       return;
     }
     if (ev.type === "raw") {
@@ -654,12 +1054,6 @@
         break;
       }
       case "response.output_item.added": {
-        const item = ev.item;
-        if (!item) break;
-        // shell call starting
-        if (item.type === "function_call" || item.type === "openrouter:shell" || item.type === "shell_call") {
-          // tool invoked — keep the running indicator
-        }
         break;
       }
       case "response.output_item.done": {
@@ -668,26 +1062,14 @@
         renderItemOutput(item, ctx);
         break;
       }
-      case "response.content_part.delta": {
-        const d = ev.delta;
-        if (typeof d === "string" && d.length) {
-          streamTextIntoBlock(ctx.block, d, ctx);
-        }
-        break;
-      }
+      case "response.content_part.delta":
       case "response.output_text.delta": {
         const d = ev.delta;
         if (typeof d === "string" && d.length) {
-          streamTextIntoBlock(ctx.block, d, ctx);
+          ctx.onText(d);
         }
         break;
       }
-      case "response.function_call_arguments.delta":
-        // arguments streaming for a tool call; ignore (server executes shell)
-        break;
-      case "response.function_call_arguments.done":
-        // full args available; not needed — server runs commands
-        break;
       case "response.done": {
         const resp = ev.response;
         if (resp && resp.usage) {
@@ -695,7 +1077,10 @@
           const parts = [];
           if (u.input_tokens != null) parts.push("in " + u.input_tokens + " tok");
           if (u.output_tokens != null) parts.push("out " + u.output_tokens + " tok");
-          if (parts.length) appendAfter(ctx.block, mkMeta(parts));
+          if (parts.length) {
+            appendAfter(ctx.block, mkMeta(parts));
+            appendBlockRecord({ kind: "meta", parts });
+          }
         }
         break;
       }
@@ -704,23 +1089,10 @@
     }
   }
 
-  // Streamed text deltas (assistant reasoning/text). We surface them only if no
-  // tool output has arrived yet; once real shell output comes, text is dropped to
-  // keep the terminal free of commentary (per the terminal behavior prompt).
-  function streamTextIntoBlock(block, delta, ctx) {
-    // We buffer text silently; final decision happens in runCommand.
-    ctx.onText(delta);
-  }
-
-  // Render a completed output item (assistant message text or shell result).
   function renderItemOutput(item, ctx) {
     if (!item) return;
 
     if (item.type === "message") {
-      // The terminal behavior prompt asks the model to output only raw terminal
-      // results. Render the final message text exactly once here. We do not rely
-      // on streamed deltas for display (deltas are only used as a fallback if no
-      // completed message item is emitted).
       const content = item.content || [];
       let text = "";
       for (const c of content) {
@@ -729,26 +1101,19 @@
       const t = text.replace(/\s+$/, "");
       if (t) {
         appendAfter(ctx.block, mkOut(t));
+        appendBlockRecord({ kind: "out", text: t });
         ctx.onText(text);
         if (ctx.onRenderedText) ctx.onRenderedText();
       }
       return;
     }
 
-    if (item.type === "function_call" || item.type === "openrouter:shell" || item.type === "shell_call") {
-      // The model called shell. The server executes it and returns results as
-      // follow-up items in the same response. We don't render the call itself.
-      return;
-    }
-
-    // shell call output: OpenRouter returns one entry per command.
     if (item.type === "shell_call_output" || item.type === "openrouter_shell_tool_result") {
       renderShellResult(item, ctx.block);
       ctx.onToolOut();
       return;
     }
 
-    // Some providers return function_call_output with output string.
     if (item.type === "function_call_output") {
       renderFunctionCallOutput(item, ctx.block);
       ctx.onToolOut();
@@ -760,17 +1125,27 @@
     const out = item.output || [];
     if (Array.isArray(out)) {
       for (const cmd of out) {
-        if (cmd.stdout) appendAfter(block, mkOut(cmd.stdout));
-        if (cmd.stderr) appendAfter(block, mkOut(cmd.stderr, "out-err"));
+        if (cmd.stdout) {
+          appendAfter(block, mkOut(cmd.stdout));
+          appendBlockRecord({ kind: "out", text: cmd.stdout });
+        }
+        if (cmd.stderr) {
+          appendAfter(block, mkOut(cmd.stderr, "out-err"));
+          appendBlockRecord({ kind: "out", text: cmd.stderr, cls: "out-err" });
+        }
         if (cmd.outcome) {
           const parts = [];
           if (cmd.outcome.type === "exit") parts.push("exit " + cmd.outcome.exit_code);
           else if (cmd.outcome.type === "timeout") parts.push("timeout");
-          if (parts.length) appendAfter(block, mkMeta(parts));
+          if (parts.length) {
+            appendAfter(block, mkMeta(parts));
+            appendBlockRecord({ kind: "meta", parts });
+          }
         }
       }
     } else if (typeof out === "string") {
       appendAfter(block, mkOut(out));
+      appendBlockRecord({ kind: "out", text: out });
     }
   }
 
@@ -779,24 +1154,31 @@
     if (typeof out !== "string") {
       try { out = JSON.stringify(out); } catch (e) { out = String(out); }
     }
-    // Shell tool outputs via function_call_output are JSON strings of {output:[...]}.
     let parsed = null;
     try { parsed = JSON.parse(out); } catch (e) {}
     if (parsed && Array.isArray(parsed.output)) {
       renderShellResult({ output: parsed.output }, block);
     } else if (parsed && parsed.stdout != null) {
-      if (parsed.stdout) appendAfter(block, mkOut(parsed.stdout));
-      if (parsed.stderr) appendAfter(block, mkOut(parsed.stderr, "out-err"));
+      if (parsed.stdout) {
+        appendAfter(block, mkOut(parsed.stdout));
+        appendBlockRecord({ kind: "out", text: parsed.stdout });
+      }
+      if (parsed.stderr) {
+        appendAfter(block, mkOut(parsed.stderr, "out-err"));
+        appendBlockRecord({ kind: "out", text: parsed.stderr, cls: "out-err" });
+      }
     } else {
       appendAfter(block, mkOut(out));
+      appendBlockRecord({ kind: "out", text: out });
     }
   }
 
-  // Handle a non-streamed (raw) completed response object.
   function handleCompletedResponse(resp, ctx) {
     if (!resp) return;
     if (resp.error) {
-      appendAfter(ctx.block, mkOut("[error] " + (resp.error.message || "failed"), "out-err"));
+      const errText = "[error] " + (resp.error.message || "failed");
+      appendAfter(ctx.block, mkOut(errText, "out-err"));
+      appendBlockRecord({ kind: "out", text: errText, cls: "out-err" });
       return;
     }
     const items = resp.output || [];
@@ -806,17 +1188,21 @@
       const parts = [];
       if (u.input_tokens != null) parts.push("in " + u.input_tokens + " tok");
       if (u.output_tokens != null) parts.push("out " + u.output_tokens + " tok");
-      if (parts.length) appendAfter(ctx.block, mkMeta(parts));
+      if (parts.length) {
+        appendAfter(ctx.block, mkMeta(parts));
+        appendBlockRecord({ kind: "meta", parts });
+      }
     }
   }
 
   // ---- global key handling ----
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
+      if (!$confirmModal.hidden) { $confirmModal.hidden = true; return; }
+      if (!$historyModal.hidden) { closeHistory(); return; }
       if (!$picker.hidden) { closePicker(); return; }
       if (!$settings.hidden) { closeSettings(); return; }
     }
-    // Ctrl/Cmd+K opens model picker; Ctrl/Cmd+, opens settings
     if ((e.ctrlKey || e.metaKey) && (e.key === "k" || e.key === "K")) {
       e.preventDefault();
       openPicker();
@@ -825,9 +1211,12 @@
       e.preventDefault();
       openSettings();
     }
+    if ((e.ctrlKey || e.metaKey) && (e.key === "h" || e.key === "H")) {
+      e.preventDefault();
+      openHistory();
+    }
   });
 
-  // keep input visible when viewport changes (mobile keyboard)
   if (window.visualViewport) {
     window.visualViewport.addEventListener("resize", () => {
       if (!$app.hidden) scrollTerm();
@@ -835,7 +1224,6 @@
   }
 
   function bindEvents() {
-    // resize handler keeps terminal scrolled to bottom
     window.addEventListener("resize", () => { if (!$app.hidden) scrollTerm(); });
   }
 
