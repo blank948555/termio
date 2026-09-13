@@ -32,7 +32,7 @@
   const $pickerSearch = el("picker-search");
   const $pickerCats = el("picker-cats");
   const $pickerList = el("picker-list");
-  const $pickerFoot = el("picker-foot");
+  const $pickerCount = el("picker-count");
 
   // settings
   const $settings = el("settings");
@@ -47,6 +47,13 @@
   const $setHeaders = el("set-headers");
   const $setClearSession = el("set-clear-session");
   const $setReset = el("set-reset");
+  const $setChangelog = el("set-changelog");
+  const $setVersion = el("set-version");
+
+  // changelog
+  const $changelog = el("changelog");
+  const $changelogClose = el("changelog-close");
+  const $changelogList = el("changelog-list");
 
   // session history
   const $historyModal = el("history-modal");
@@ -82,6 +89,21 @@
 
   const CAT_LABELS = { all: "All", free: "Free", cheap: "Cheap", fast: "Fast", premium: "Premium" };
 
+  const VERSION = "v1.0";
+  const CHANGELOG = [
+    {
+      version: "v1.0",
+      items: [
+        "Fullscreen true-AMOLED redesign: setup, settings, model picker, history, and changelog are now dedicated fullscreen views.",
+        "Setup introduces each part one by one with smooth staged reveal animations on a true black background.",
+        "Model pricing now shows real per-token input and output rates directly from the OpenRouter catalog — no invented per-prompt estimates.",
+        "Model catalog fetched dynamically from OpenRouter (complete catalog, no hardcoded model list or prices).",
+        "Pill-shaped, rounded components throughout; refined top header and command input for smoother, responsive mobile use.",
+        "Version moved off the home screen into Settings → Version & Changelog.",
+      ],
+    },
+  ];
+
   // ---- utils ----
   function toast(msg, ms) {
     $toast.textContent = msg;
@@ -97,15 +119,18 @@
       .replace(/>/g, "&gt;");
   }
 
-  function fmtPrice(m) {
-    if (OpenRouter.isFree(m)) return "free";
-    const p = OpenRouter.combinedPricePerM(m);
-    if (p == null) return "—";
-    if (p === 0) return "free";
-    if (p < 0.01) return "<$0.01/M";
-    if (p < 1) return "$" + p.toFixed(3) + "/M";
-    if (p < 100) return "$" + p.toFixed(2) + "/M";
-    return "$" + Math.round(p) + "/M";
+  function fmtPerM(n) {
+    if (n == null) return null;
+    if (n === 0) return "free";
+    if (n < 0.01) return "<$0.01/M";
+    if (n < 1) return "$" + n.toFixed(3) + "/M";
+    if (n < 100) return "$" + n.toFixed(2) + "/M";
+    return "$" + Math.round(n) + "/M";
+  }
+
+  function isPriceHigh(m) {
+    const p = OpenRouter.priceOrderMetric(m);
+    return p != null && p >= 5;
   }
 
   function fmtCtx(m) {
@@ -172,7 +197,7 @@
 
   function appendBlock(nodes) {
     const block = document.createElement("div");
-    block.className = "term-block";
+    block.className = "term-block is-new";
     for (const n of nodes) block.appendChild(n);
     $termOutput.appendChild(block);
     scrollTerm();
@@ -195,7 +220,7 @@
 
   function mkOut(text, cls) {
     const out = document.createElement("div");
-    out.className = "term-out" + (cls ? " " + cls : "");
+    out.className = "term-out is-new" + (cls ? " " + cls : "");
     out.textContent = text == null ? "" : String(text);
     return out;
   }
@@ -265,7 +290,7 @@
     $termWelcome.innerHTML = "";
 
     const lines = [
-      "TERMIO v1.0 [OpenRouter Hosted Shell]",
+      "TERMIO [OpenRouter Hosted Shell]",
       "Connected to isolated Linux environment.",
       "Enter a command or ask the terminal to begin."
     ];
@@ -326,6 +351,11 @@
     $picker.hidden = true;
     $settings.hidden = true;
     $historyModal.hidden = true;
+    $changelog.hidden = true;
+    // Trigger the staged reveal animation by (re)applying the revealing class.
+    $setup.classList.remove("is-revealing");
+    void $setup.offsetWidth;
+    $setup.classList.add("is-revealing");
   }
 
   async function showApp() {
@@ -371,7 +401,7 @@
   }
 
   function focusInput() {
-    if (!$picker.hidden || !$settings.hidden || !$historyModal.hidden || !$confirmModal.hidden) return;
+    if (!$picker.hidden || !$settings.hidden || !$historyModal.hidden || !$changelog.hidden || !$confirmModal.hidden) return;
     requestAnimationFrame(() => { try { $cmdInput.focus({ preventScroll: true }); } catch (e) {} });
   }
 
@@ -495,9 +525,9 @@
   function renderPicker() {
     renderCats();
     renderPickerList();
-    $pickerFoot.textContent = state.models.length
-      ? state.models.length + " models · live from OpenRouter"
-      : "Loading models…";
+    $pickerCount.textContent = state.models.length
+      ? state.models.length + ""
+      : "";
   }
 
   function renderCats() {
@@ -571,17 +601,27 @@
 
       const meta = document.createElement("div");
       meta.className = "picker-item-meta";
-      const price = fmtPrice(m);
-      const priceSpan = document.createElement("span");
-      priceSpan.className = "tag";
-      if (OpenRouter.isFree(m)) priceSpan.classList.add("tag-free");
-      else if (price !== "—" && price !== "free" && price.startsWith("$")) {
-        const n = parseFloat(price.replace(/[^0-9.]/g, ""));
-        if (!isNaN(n) && n >= 5) priceSpan.classList.add("tag-prem");
-        else if (!isNaN(n)) priceSpan.classList.add("tag-cheap");
+      if (OpenRouter.isFree(m)) {
+        const priceSpan = document.createElement("span");
+        priceSpan.className = "tag tag-free";
+        priceSpan.textContent = "free";
+        meta.appendChild(priceSpan);
+      } else {
+        const inP = OpenRouter.promptPricePerM(m);
+        const outP = OpenRouter.completionPricePerM(m);
+        if (inP != null) {
+          const inTag = document.createElement("span");
+          inTag.className = "tag" + (isPriceHigh(m) ? " tag-prem" : "");
+          inTag.textContent = "in " + (fmtPerM(inP) || "—").replace("/M", "");
+          meta.appendChild(inTag);
+        }
+        if (outP != null) {
+          const outTag = document.createElement("span");
+          outTag.className = "tag" + (isPriceHigh(m) ? " tag-prem" : "");
+          outTag.textContent = "out " + (fmtPerM(outP) || "—").replace("/M", "");
+          meta.appendChild(outTag);
+        }
       }
-      priceSpan.textContent = price;
-      meta.appendChild(priceSpan);
 
       const ctx = fmtCtx(m);
       if (ctx) {
@@ -778,6 +818,7 @@
 
     $setClear.checked = !!state.prefs.clearOnCmd;
     $setHeaders.checked = !!state.prefs.showHeaders;
+    if ($setVersion) $setVersion.textContent = VERSION;
     renderModelPill();
     $settings.hidden = false;
   }
@@ -867,10 +908,47 @@
       closeSettings();
       closePicker();
       closeHistory();
+      closeChangelog();
       showSetup();
       toast("All data reset");
     }
   });
+
+  // ---- changelog ----
+  $setChangelog.addEventListener("click", openChangelog);
+  $changelogClose.addEventListener("click", closeChangelog);
+
+  function openChangelog() {
+    renderChangelog();
+    $changelog.hidden = false;
+  }
+  function closeChangelog() {
+    $changelog.hidden = true;
+    focusInput();
+  }
+  function renderChangelog() {
+    if (!$changelogList) return;
+    $changelogList.innerHTML = "";
+    const frag = document.createDocumentFragment();
+    for (const entry of CHANGELOG) {
+      const e = document.createElement("div");
+      e.className = "changelog-entry";
+      const ver = document.createElement("div");
+      ver.className = "cl-ver";
+      ver.textContent = entry.version;
+      const ul = document.createElement("ul");
+      ul.className = "cl-items";
+      for (const item of entry.items) {
+        const li = document.createElement("li");
+        li.textContent = item;
+        ul.appendChild(li);
+      }
+      e.appendChild(ver);
+      e.appendChild(ul);
+      frag.appendChild(e);
+    }
+    $changelogList.appendChild(frag);
+  }
 
   // ---- command execution ----
   $cmdForm.addEventListener("submit", (e) => {
@@ -1199,6 +1277,7 @@
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
       if (!$confirmModal.hidden) { $confirmModal.hidden = true; return; }
+      if (!$changelog.hidden) { closeChangelog(); return; }
       if (!$historyModal.hidden) { closeHistory(); return; }
       if (!$picker.hidden) { closePicker(); return; }
       if (!$settings.hidden) { closeSettings(); return; }
