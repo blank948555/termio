@@ -18,11 +18,20 @@ Plain HTML, CSS, and JavaScript. No frameworks, no build tooling.
 
 ## How it works
 
-1. First run shows a setup screen: you provide your own OpenRouter API key.
-2. Models load dynamically from `GET /api/v1/models` — no hardcoded model names,
-   pricing, or categories.
-3. Categories (`Free`, `Cheap`, `Fast`, `Premium`) are derived from current
+1. First run shows a fullscreen, true-black AMOLED setup experience that
+   introduces each step one by one; you provide your own OpenRouter API key.
+2. Models load dynamically from `GET /api/v1/models?output_modalities=all` and
+   follow server pagination, so the complete available catalog is fetched with
+   no hardcoded model names, prices, or categories. Newly added models appear
+   without code changes.
+3. Pricing is shown directly from the OpenRouter catalog as real per-token
+   input (prompt) and output (completion) rates. There are no hardcoded or
+   invented per-prompt / per-request estimates.
+4. Categories (`Free`, `Cheap`, `Fast`, `Premium`) are derived from current
    OpenRouter model metadata/pricing, not hardcoded membership.
+5. Setup, Settings, Model Picker, Session History, and Version & Changelog are
+   dedicated fullscreen views (no cramped popups). The version number lives in
+   Settings → Version & Changelog, not on the home screen.
 4. Commands run via the Responses API with `tools: [{ type: "openrouter:shell",
    parameters: { engine: "openrouter" } }]`, always using the selected model.
 5. Real shell output is rendered exactly; if Shell is unavailable it prints

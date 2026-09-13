@@ -76,14 +76,17 @@
   }
 
   // ---- Models ----
-  // Fetch the full catalog (handles pagination via links.next).
+  // Fetch the COMPLETE available catalog dynamically. No hardcoded model list.
+  // Uses output_modalities=all so every available model (text, image, audio, ...)
+  // is included and newly added models appear without code changes. Follows
+  // server pagination via links.next when present.
   async function fetchModels(apiKey) {
     const headers = {};
     if (apiKey) headers["Authorization"] = "Bearer " + apiKey;
     const out = [];
-    let url = MODELS_URL;
+    let url = MODELS_URL + "?output_modalities=all";
     const seen = new Set();
-    for (let guard = 0; guard < 20; guard++) {
+    for (let guard = 0; guard < 40; guard++) {
       const res = await fetch(url, { headers });
       if (!res.ok) {
         const msg = await safeErr(res);
@@ -105,24 +108,39 @@
   }
 
   // ---- Pricing helpers (USD per token strings → numbers) ----
+  // OpenRouter pricing values are USD PER TOKEN (e.g. "0.00001" = $0.00001/token
+  // = $10 per 1M tokens). We surface input (prompt) and output (completion) costs
+  // SEPARATELY and directly from the catalog. We never invent per-prompt or
+  // per-request estimates and never collapse the two into a single misleading
+  // number for display.
   function toNum(v) {
     if (v == null) return null;
     const n = typeof v === "number" ? v : parseFloat(v);
     return isFinite(n) ? n : null;
   }
-  function perMillion(v) {
-    const n = toNum(v);
+
+  // USD per 1M tokens, derived directly from catalog pricing.
+  function promptPricePerM(m) {
+    const n = toNum((m && m.pricing && m.pricing.prompt));
+    return n == null ? null : n * 1_000_000;
+  }
+  function completionPricePerM(m) {
+    const n = toNum((m && m.pricing && m.pricing.completion));
     return n == null ? null : n * 1_000_000;
   }
 
-  // Combined $/M tokens for prompt+completion (the catalog's dominant cost axis).
-  function combinedPricePerM(m) {
-    const p = (m && m.pricing) || {};
-    const prompt = toNum(p.prompt);
-    const completion = toNum(p.completion);
+  // A derived ordering metric ONLY for category filtering/sorting, never for
+  // display. Uses the average of prompt and completion per-token cost.
+  function priceOrderMetric(m) {
+    const prompt = toNum((m && m.pricing && m.pricing.prompt));
+    const completion = toNum((m && m.pricing && m.pricing.completion));
     if (prompt == null && completion == null) return null;
     return ((prompt || 0) + (completion || 0)) * 1_000_000;
   }
+
+  // Kept for backwards compatibility with any external callers; maps to the
+  // ordering metric and is NOT used for display.
+  function combinedPricePerM(m) { return priceOrderMetric(m); }
 
   function isFree(m) {
     const p = (m && m.pricing) || {};
@@ -140,7 +158,7 @@
 
   function categorize(m) {
     const cats = [];
-    const price = combinedPricePerM(m);
+    const price = priceOrderMetric(m);
     if (isFree(m)) {
       cats.push("free");
     } else if (price != null) {
@@ -264,6 +282,9 @@
     shellTool,
     categorize,
     combinedPricePerM,
+    priceOrderMetric,
+    promptPricePerM,
+    completionPricePerM,
     perMillion,
     isFree,
     shortName,
