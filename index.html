@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#000000" />
+  <meta name="description" content="Termio — a dedicated browser terminal powered by OpenRouter hosted Shell." />
+  <title>Termio</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- ===================== SETUP (first run) ===================== -->
+  <section id="setup" class="screen" hidden>
+    <div class="setup-card">
+      <header class="setup-head">
+        <div class="brand">
+          <span class="brand-mark">▟</span>
+          <h1 class="brand-name">Termio</h1>
+        </div>
+        <span class="badge badge-beta">BETA</span>
+      </header>
+
+      <p class="setup-tagline">A dedicated browser terminal powered by OpenRouter hosted Shell.</p>
+
+      <ul class="setup-points">
+        <li>Termio runs real shell commands inside a hosted Linux environment provided by OpenRouter.</li>
+        <li>You bring your own OpenRouter API key. Termio never bundles or proxies one.</li>
+        <li>Shell is a beta feature. It runs in a limited, isolated, hosted sandbox.</li>
+        <li>That environment is <strong>not</strong> your own computer. Files and state are container-scoped.</li>
+        <li>Using Shell and the selected model can consume OpenRouter credits and may incur charges.</li>
+        <li>Stored sessions and container data may be limited or temporary.</li>
+      </ul>
+
+      <form id="setup-form" class="setup-form" autocomplete="off">
+        <label class="field">
+          <span class="field-label">OpenRouter API key</span>
+          <input id="setup-key" type="password" inputmode="text" autocomplete="off" spellcheck="false"
+                 placeholder="sk-or-v1-…" required />
+          <span class="field-hint">Get one at openrouter.ai/keys. Stored only on this device.</span>
+        </label>
+
+        <button type="submit" class="btn btn-primary">Continue</button>
+      </form>
+
+      <p class="setup-foot">By continuing you acknowledge the beta limits described above.</p>
+    </div>
+  </section>
+
+  <!-- ===================== MAIN APP ===================== -->
+  <div id="app" class="app" hidden>
+    <!-- compact top bar -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <button id="menu-btn" class="icon-btn" type="button" aria-label="Settings">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <path fill="currentColor" d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm8.94 4a1 1 0 0 0-.25-1.6l-1.6-.9a1 1 0 0 1-.5-1.18l.5-1.78a1 1 0 0 0-1.18-1.25l-1.78.5a1 1 0 0 1-1.18-.5l-.9-1.6a1 1 0 0 0-1.7 0l-.9 1.6a1 1 0 0 1-1.18.5l-1.78-.5a1 1 0 0 0-1.18 1.25l.5 1.78a1 1 0 0 1-.5 1.18l-1.6.9a1 1 0 0 0 0 1.7l1.6.9a1 1 0 0 1 .5 1.18l-.5 1.78a1 1 0 0 0 1.18 1.25l1.78-.5a1 1 0 0 1 1.18.5l.9 1.6a1 1 0 0 0 1.7 0l.9-1.6a1 1 0 0 1 1.18-.5l1.78.5a1 1 0 0 0 1.18-1.25l-.5-1.78a1 1 0 0 1 .5-1.18l1.6-.9a1 1 0 0 0 .25-1.6z"/>
+          </svg>
+        </button>
+        <span class="app-title">Termio</span>
+        <span class="badge badge-beta badge-sm">BETA</span>
+      </div>
+      <div class="topbar-right">
+        <button id="model-btn" class="model-pill" type="button" aria-haspopup="dialog" aria-label="Select model">
+          <span id="model-pill-name" class="model-pill-name">Model…</span>
+          <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="m7 10 5 5 5-5z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- terminal output -->
+    <main id="term" class="term" aria-label="Terminal output" tabindex="-1">
+      <div id="term-output" class="term-output"></div>
+      <div id="term-welcome" class="term-welcome"></div>
+    </main>
+
+    <!-- command input -->
+    <footer class="inputbar">
+      <span class="prompt" aria-hidden="true">$</span>
+      <form id="cmd-form" class="cmd-form">
+        <input id="cmd-input" class="cmd-input" type="text" autocomplete="off" autocapitalize="off"
+               autocorrect="off" spellcheck="false" enterkeyhint="send"
+               placeholder="enter a command or ask the terminal…" aria-label="Command input" />
+      </form>
+    </footer>
+  </div>
+
+  <!-- ===================== MODEL PICKER ===================== -->
+  <div id="picker" class="modal" role="dialog" aria-modal="true" aria-label="Select model" hidden>
+    <div class="modal-panel">
+      <header class="modal-head">
+        <h2>Select model</h2>
+        <button id="picker-close" class="icon-btn" type="button" aria-label="Close">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M18.3 5.7 12 12l6.3 6.3-1.4 1.4L10.6 13.4 4.3 19.7 2.9 18.3 9.2 12 2.9 5.7 4.3 4.3l6.3 6.3 6.3-6.3z"/></svg>
+        </button>
+      </header>
+      <div class="modal-controls">
+        <input id="picker-search" class="picker-search" type="search" autocomplete="off"
+               spellcheck="false" placeholder="Search models…" aria-label="Search models" />
+        <div id="picker-cats" class="picker-cats" role="tablist"></div>
+      </div>
+      <div id="picker-list" class="picker-list" role="listbox" aria-label="Available models"></div>
+      <div id="picker-foot" class="modal-foot"></div>
+    </div>
+  </div>
+
+  <!-- ===================== SETTINGS ===================== -->
+  <div id="settings" class="modal" role="dialog" aria-modal="true" aria-label="Settings" hidden>
+    <div class="modal-panel">
+      <header class="modal-head">
+        <h2>Settings</h2>
+        <button id="settings-close" class="icon-btn" type="button" aria-label="Close">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M18.3 5.7 12 12l6.3 6.3-1.4 1.4L10.6 13.4 4.3 19.7 2.9 18.3 9.2 12 2.9 5.7 4.3 4.3l6.3 6.3 6.3-6.3z"/></svg>
+        </button>
+      </header>
+
+      <div class="settings-body">
+        <section class="settings-section">
+          <h3 class="settings-h">OpenRouter</h3>
+          <label class="field">
+            <span class="field-label">API key</span>
+            <div class="key-row">
+              <input id="set-key" type="password" autocomplete="off" spellcheck="false" placeholder="sk-or-v1-…" />
+              <button id="set-key-toggle" class="btn btn-ghost" type="button" aria-label="Show key">show</button>
+            </div>
+            <span class="field-hint">Stored on this device only.</span>
+          </label>
+
+          <label class="field">
+            <span class="field-label">Model</span>
+            <button id="set-model" class="model-pill model-pill-wide" type="button">
+              <span id="set-model-name" class="model-pill-name">Model…</span>
+              <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="m7 10 5 5 5-5z"/></svg>
+            </button>
+          </label>
+        </section>
+
+        <section class="settings-section">
+          <h3 class="settings-h">Terminal</h3>
+          <label class="field field-inline">
+            <span class="field-label">Clear screen on new command</span>
+            <input id="set-clear" type="checkbox" class="switch" />
+          </label>
+          <label class="field field-inline">
+            <span class="field-label">Show command headers ($ cmd)</span>
+            <input id="set-headers" type="checkbox" class="switch" />
+          </label>
+        </section>
+
+        <section class="settings-section">
+          <h3 class="settings-h">Data</h3>
+          <button id="set-clear-session" class="btn btn-ghost" type="button">Clear terminal session</button>
+          <button id="set-reset" class="btn btn-danger" type="button">Reset all Termio data</button>
+        </section>
+
+        <section class="settings-section">
+          <h3 class="settings-h">About Shell (Beta)</h3>
+          <p class="settings-note">
+            Shell runs commands in a limited, isolated, hosted Linux sandbox provided by OpenRouter.
+            It is not your own computer. Files and state are container-scoped and may be temporary.
+            Using Shell and the selected model can consume OpenRouter credits and may incur charges.
+            Runtime resources can be limited and may change during the beta.
+          </p>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <!-- toast -->
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+  <script src="storage.js"></script>
+  <script src="openrouter.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
