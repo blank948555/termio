@@ -234,6 +234,21 @@ button, input, select { font-family: var(--sans); }
   width: 100%;
 }
 
+.setup-warning-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 4px;
+}
+.setup-warning-icon {
+  color: var(--warn);
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: 2px;
+}
+
 .setup-warning-box, .setup-ready-box {
   background: var(--bg-1);
   border: 1px solid var(--line-2);
@@ -555,14 +570,20 @@ input:focus, select:focus {
   padding: 10px 14px;
   padding-bottom: calc(10px + var(--safe-bottom));
   border-top: 1px solid var(--line);
-  background: var(--bg);
+  background: var(--bg-1);
+  transition: border-color .16s var(--ease), background .16s var(--ease);
+}
+.inputbar:focus-within {
+  background: #09090c;
+  border-top-color: var(--line-2);
 }
 .prompt {
-  color: var(--fg);
+  color: var(--ok);
   font-size: 15px;
   font-weight: 700;
   flex: 0 0 auto;
   font-family: var(--mono);
+  text-shadow: 0 0 8px rgba(116, 224, 138, 0.3);
 }
 .cmd-form {
   flex: 1 1 auto;
@@ -578,10 +599,11 @@ input:focus, select:focus {
   font-family: var(--mono);
   font-size: 14.5px;
   padding: 8px 0;
-  caret-color: var(--fg);
+  caret-color: var(--ok);
+  letter-spacing: 0.2px;
 }
 .cmd-input::placeholder { color: var(--dim); }
-.cmd-input:disabled { opacity: 0.5; }
+.cmd-input:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ---------- Model Picker controls & list ---------- */
 .picker-filter-row { display: flex; gap: 8px; width: 100%; }

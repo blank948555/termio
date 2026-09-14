@@ -107,7 +107,7 @@
         "Welcome to the first beta of Termio.",
         "Dynamic OpenRouter model discovery with live per-token pricing and context lengths.",
         "Hosted Linux container shell integration with container_auto network policy allowlist injection.",
-        "True AMOLED black theme with multi-step setup wizard, mobile-responsive topbar, and fullscreen settings.",
+        "Dark terminal theme with multi-step setup wizard, mobile-responsive topbar, and fullscreen settings.",
         "Custom fullscreen warnings for dangerous commands, data resets, and key management.",
       ],
     },
@@ -351,7 +351,8 @@
       console.error("storage init failed", e);
     }
     const setupDone = Storage._mem.setupDone === true;
-    if (setupDone) {
+    const hasKey = !!Storage._mem.apiKey;
+    if (setupDone && hasKey) {
       await showApp();
     } else {
       showSetup();
@@ -384,6 +385,10 @@
       d.classList.toggle("active", idx === setupStep);
     });
 
+    if (setupStep === 1 && state.apiKey && !$setupKey.value) {
+      $setupKey.value = state.apiKey;
+    }
+
     $wizardBackBtn.disabled = (setupStep === 0);
     $wizardNextBtn.textContent = (setupStep === TOTAL_SETUP_STEPS - 1) ? "Get Started" : "Next";
   }
@@ -401,6 +406,9 @@
       if (keyVal) {
         state.apiKey = keyVal;
         try { await Storage.setSetting("apiKey", keyVal); } catch (e) {}
+      } else if (!state.apiKey) {
+        toast("Please enter your OpenRouter API key before proceeding");
+        return;
       }
     }
 
@@ -411,7 +419,7 @@
       // Final Ready step -> Finish
       const keyVal = $setupKey.value.trim();
       if (!state.apiKey && !keyVal) {
-        toast("Please enter an OpenRouter API key on Step 2");
+        toast("Please enter an OpenRouter API key");
         setupStep = 1;
         renderSetupStep();
         return;
@@ -429,6 +437,12 @@
 
   async function showApp() {
     state.apiKey = Storage._mem.apiKey || null;
+    if (!state.apiKey) {
+      toast("An OpenRouter API key is required to use Termio");
+      showSetup();
+      return;
+    }
+
     state.modelId = Storage._mem.model || null;
     const prefs = Storage._mem.prefs || {};
     if (prefs && typeof prefs === "object") {
