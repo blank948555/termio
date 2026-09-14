@@ -385,16 +385,19 @@
   }
 
   function restoreSessionBlocks(blocks) {
+    // Append-only reconstruction: rebuild the full terminal history for the
+    // loaded session exactly as it was, command + output + meta per block.
     $termOutput.innerHTML = "";
     if (!Array.isArray(blocks) || blocks.length === 0) return;
 
+    const showHeaders = state.prefs.showHeaders !== false;
     let currentBlock = null;
     for (const b of blocks) {
       if (!b) continue;
       if (b.kind === "cmd") {
         currentBlock = document.createElement("div");
         currentBlock.className = "term-block";
-        currentBlock.appendChild(mkCmdLine(b.text));
+        if (showHeaders) currentBlock.appendChild(mkCmdLine(b.text));
         $termOutput.appendChild(currentBlock);
       } else {
         if (!currentBlock) {
@@ -1311,6 +1314,8 @@
     let gotToolOutput = false;
     let assistantText = "";
     let responseItems = [];
+    const renderedItemIds = new Set();
+    const seenItemIds = new Set();
 
     const networkEnabled = !!state.networkAccess;
 
@@ -1325,9 +1330,18 @@
         signal: abortCtrl.signal,
         onEvent: (ev) => handleStreamEvent(ev, {
           running, block,
+          renderedItemIds,
+          seenItemIds,
           onToolOut: () => { gotToolOutput = true; },
           onAssistantText: (t) => { if (t) assistantText += t; },
-          onItem: (item) => { responseItems.push(item); },
+          onItem: (item) => {
+            // Deduplicate by item id so the final response.completed array
+            // does not push a second copy of items already seen mid-stream.
+            const id = item && (item.id || item.call_id);
+            if (id && seenItemIds.has(id)) return;
+            if (id) seenItemIds.add(id);
+            responseItems.push(item);
+          },
           onSession: (id) => { if (id) rememberSession(id); },
         }),
       });
@@ -1457,38 +1471,46 @@
 
     switch (ev.type) {
       case "response.created":
-      case "response.done": {
+      case "response.in_progress": {
         const resp = ev.response || {};
         const id = ev.session_id || resp.session_id || resp.id;
         if (id) ctx.onSession(id);
-        if (ev.type === "response.done" && resp.usage) {
-          const u = resp.usage;
-          const parts = [];
-          if (u.input_tokens != null) parts.push("in " + u.input_tokens + " tok");
-          if (u.output_tokens != null) parts.push("out " + u.output_tokens + " tok");
-          if (parts.length) {
-            appendAfter(ctx.block, mkMeta(parts));
-            appendBlockRecord({ kind: "meta", parts });
-          }
-        }
         break;
       }
       case "response.output_item.added": {
+        // Nothing to render yet; the populated item arrives in .done or in the
+        // final response.completed array.
         break;
       }
       case "response.output_item.done": {
         const item = ev.item;
         if (!item) break;
+        // Some providers stream an early empty shell placeholder (no commands,
+        // no output) and deliver the real result only in response.completed.
+        // Skip placeholders here; the completed handler will add and render the
+        // fully-populated item.
+        if (isShellPlaceholder(item)) break;
         if (ctx.onItem) ctx.onItem(item);
         renderItemOutput(item, ctx);
         break;
       }
-      case "response.content_part.delta":
-      case "response.output_text.delta": {
-        break;
-      }
+      case "response.completed":
       case "response.done": {
-        const resp = ev.response;
+        const resp = ev.response || ev;
+        const id = ev.session_id || (resp && (resp.session_id || resp.id));
+        if (id) ctx.onSession(id);
+        // The streaming completion event carries the FINAL response.output
+        // array, where shell results are fully populated (action.commands and
+        // output). The mid-stream output_item.done events for some providers
+        // arrive as empty placeholders with output: undefined. Process the
+        // completed array so the real command output is always rendered and
+        // added to conversation state exactly once (de-duplicated by id).
+        const items = (resp && Array.isArray(resp.output)) ? resp.output : [];
+        for (const item of items) {
+          if (isShellPlaceholder(item)) continue;
+          if (ctx.onItem) ctx.onItem(item);
+          renderItemOutput(item, ctx);
+        }
         if (resp && resp.usage) {
           const u = resp.usage;
           const parts = [];
@@ -1506,8 +1528,30 @@
     }
   }
 
+  // An openrouter:shell item streamed before execution has no commands and no
+  // output — a placeholder the provider fills in later. We must not treat it
+  // as a real result (no [shell unavailable] suppression, no empty render).
+  function isShellPlaceholder(item) {
+    if (!item) return false;
+    if (item.type !== "openrouter:shell" && item.type !== "shell_call" && item.type !== "shell_call_output") return false;
+    const out = item.output;
+    const hasOutput = Array.isArray(out) ? out.length > 0 : (!!out);
+    const cmds = item.action && item.action.commands;
+    const hasCommands = Array.isArray(cmds) ? cmds.length > 0 : (!!cmds);
+    return !hasOutput && !hasCommands;
+  }
+
   function renderItemOutput(item, ctx) {
     if (!item) return;
+
+    // De-duplicate by item id: the same item can arrive both in a mid-stream
+    // output_item.done event and again in the final response.completed array.
+    // Render each item's real output exactly once.
+    const id = item.id || item.call_id;
+    if (id && ctx.renderedItemIds) {
+      if (ctx.renderedItemIds.has(id)) return;
+      ctx.renderedItemIds.add(id);
+    }
 
     if (item.type === "message") {
       // Eliminate all assistant commentary, summaries, explanations, diagnoses,
@@ -1528,7 +1572,10 @@
       return;
     }
 
-    if (item.type === "openrouter:shell" || item.type === "shell_call_output" || item.type === "openrouter_shell_tool_result") {
+    if (item.type === "openrouter:shell" || item.type === "shell_call" || item.type === "shell_call_output" || item.type === "openrouter_shell_tool_result") {
+      // Skip empty placeholders; only a shell item that actually executed (has
+      // commands and/or output) counts as tool output.
+      if (isShellPlaceholder(item)) return;
       renderShellResult(item, ctx.block);
       // A shell result item means the shell actually executed (even when it
       // produced no stdout/stderr), so this counts as tool output and must NOT
