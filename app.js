@@ -56,6 +56,10 @@
   const $setNetworkSwitch = el("set-network-switch");
   const $setNetworkSub = el("set-network-sub");
 
+  // setup network switch (mirrors settings network access)
+  const $setupNetworkSwitch = el("setup-network-switch");
+  const $setupNetworkSub = el("setup-network-sub");
+
   // network access
   const $networkAccess = el("network-access");
   const $networkAccessClose = el("network-access-close");
@@ -100,7 +104,7 @@
 
   let welcomeTimer = null;
   let setupStep = 0;
-  const TOTAL_SETUP_STEPS = 5;
+  const TOTAL_SETUP_STEPS = 6;
 
   const CAT_LABELS = { all: "All", free: "Free", cheap: "Cheap", fast: "Fast", premium: "Premium" };
 
@@ -486,6 +490,8 @@
 
   function showSetup() {
     setupStep = 0;
+    // networkAccess default MUST be OFF (false) unless explicitly enabled
+    state.networkAccess = Storage._mem.networkAccess === true;
     renderSetupStep();
     $setup.hidden = false;
     $app.hidden = true;
@@ -511,6 +517,10 @@
 
     if (setupStep === 1 && state.apiKey && !$setupKey.value) {
       $setupKey.value = state.apiKey;
+    }
+
+    if (setupStep === 3) {
+      syncSetupNetworkSwitch();
     }
 
     $wizardBackBtn.disabled = (setupStep === 0);
@@ -558,6 +568,25 @@
       await showApp();
     }
   });
+
+  function syncSetupNetworkSwitch() {
+    const isOn = !!state.networkAccess;
+    if ($setupNetworkSwitch) $setupNetworkSwitch.checked = isOn;
+    if ($setupNetworkSub) {
+      $setupNetworkSub.textContent = isOn
+        ? "ON — Allowlist active (api.github.com, PyPI)"
+        : "OFF — Outbound shell networking disabled";
+    }
+  }
+
+  if ($setupNetworkSwitch) {
+    $setupNetworkSwitch.addEventListener("change", async () => {
+      state.networkAccess = $setupNetworkSwitch.checked;
+      try { await Storage.setSetting("networkAccess", state.networkAccess); } catch (e) {}
+      syncSetupNetworkSwitch();
+      updateNetworkAccessUI();
+    });
+  }
 
   async function showApp() {
     state.apiKey = Storage._mem.apiKey || null;

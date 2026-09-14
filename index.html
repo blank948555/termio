@@ -23,6 +23,7 @@
           <span class="wizard-step-dot" data-step-dot="2"></span>
           <span class="wizard-step-dot" data-step-dot="3"></span>
           <span class="wizard-step-dot" data-step-dot="4"></span>
+          <span class="wizard-step-dot" data-step-dot="5"></span>
         </div>
       </header>
 
@@ -76,21 +77,43 @@
           </div>
         </div>
 
-        <!-- Step 3: Privacy & Data -->
+        <!-- Step 3: Network Access -->
         <div class="wizard-step" data-step="3" hidden>
+          <h1 class="setup-title">Network Access</h1>
+          <p class="setup-sub">Choose whether the hosted shell sandbox may reach the internet.</p>
+          <div class="setup-network-box">
+            <div class="setup-network-row">
+              <span class="row-pill-main">
+                <span class="row-pill-title">Network Access</span>
+                <span id="setup-network-sub" class="row-pill-sub">OFF — Outbound shell networking disabled</span>
+              </span>
+              <input id="setup-network-switch" type="checkbox" class="switch" aria-label="Toggle Network Access" />
+            </div>
+            <p class="setup-network-desc">
+              When enabled, commands you run inside the hosted Linux sandbox can connect to a small approved allowlist of domains (such as <code>api.github.com</code> and <code>pypi.org</code>). When disabled, the container has no outbound internet access at all. You can change this later in Settings, and view the full domain list there.
+            </p>
+            <div class="setup-alpha-note">
+              <span class="badge badge-warn badge-sm">Alpha</span>
+              <span>Network Access is in an alpha stage and not fully tested. It may behave unexpectedly, and the allowlist may change as the feature stabilizes.</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 4: Privacy & Data -->
+        <div class="wizard-step" data-step="4" hidden>
           <h1 class="setup-title">Privacy &amp; Data</h1>
           <p class="setup-sub">How your data moves when using Termio.</p>
           <ul class="setup-points">
             <li><strong>Prompts &amp; Commands:</strong> The commands you enter are sent to OpenRouter so it can process your model requests. The selected model and provider handle request content through OpenRouter's infrastructure.</li>
             <li><strong>Hosted Shell:</strong> Shell and tool requests run on OpenRouter's hosted infrastructure in a sandboxed Linux container, not on your device.</li>
-            <li><strong>Network Access:</strong> When Network Access is enabled, requests from the hosted shell may reach the allowed external domains listed in Settings. When it is off, the container has no outbound internet access.</li>
+            <li><strong>Network Access:</strong> When Network Access is enabled, requests from the hosted shell may reach the allowed external domains listed in Settings. When it is off, the container has no outbound internet access. This is an alpha-stage feature and is not fully tested.</li>
             <li><strong>Local Storage:</strong> Termio preferences, saved sessions, and history can remain on your device in IndexedDB. They are not required for the terminal to function and can be cleared anytime in Settings.</li>
             <li><strong>API Keys:</strong> Your OpenRouter API key is stored only in this browser and is sent only where required to authenticate requests with the OpenRouter API. It is never logged, displayed publicly, added to URLs, or sent anywhere else.</li>
           </ul>
         </div>
 
-        <!-- Step 4: Ready -->
-        <div class="wizard-step" data-step="4" hidden>
+        <!-- Step 5: Ready -->
+        <div class="wizard-step" data-step="5" hidden>
           <h1 class="setup-title">Ready</h1>
           <p class="setup-sub">Configuration complete. Click "Get Started" to launch Termio.</p>
           <div class="setup-ready-box">
