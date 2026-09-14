@@ -109,10 +109,14 @@
     {
       version: "v1.0",
       items: [
-        "Termio is a browser terminal, not a chat app. Type a command, it runs in a real hosted Linux sandbox, and the real stdout/stderr is shown.",
-        "One command in, one command out. Termio never runs follow-ups, retries, or extra steps on its own.",
-        "Commands run through OpenRouter's openrouter:shell tool. Output is the actual result — nothing is invented or guessed.",
-        "If the shell can't run a command, it prints [shell unavailable] and stops rather than faking an answer.",
+        "Termio is a browser terminal. You type a command and it runs in a real hosted Linux sandbox.",
+        "Runs any shell command and returns its real stdout, stderr, and exit code.",
+        "Powers the shell through OpenRouter models that support tools, loaded live from the catalog.",
+        "One command in, one command out. Runs exactly what you type, then waits for the next input.",
+        "Network access is a real on/off toggle that controls the sandbox's outbound connection.",
+        "Sessions and history are saved locally in your browser with IndexedDB.",
+        "Setup, settings, model picker, session history, and this changelog are dedicated fullscreen views.",
+        "Runs entirely in the browser from static files — no build step, no backend, no framework.",
       ],
     },
   ];
@@ -1473,7 +1477,7 @@
       return;
     }
 
-    if (item.type === "shell_call_output" || item.type === "openrouter_shell_tool_result") {
+    if (item.type === "openrouter:shell" || item.type === "shell_call_output" || item.type === "openrouter_shell_tool_result") {
       renderShellResult(item, ctx.block);
       ctx.onToolOut();
       return;
