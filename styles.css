@@ -41,6 +41,7 @@ html, body {
   font-family: var(--sans);
   -webkit-text-size-adjust: 100%;
   -webkit-tap-highlight-color: transparent;
+  touch-action: pan-x pan-y;
   overflow: hidden;
 }
 
@@ -514,6 +515,8 @@ input:focus, select:focus {
 .term-block { display: flex; flex-direction: column; gap: 2px; }
 .term-block + .term-block { margin-top: 12px; }
 .term-block.is-new { animation: blockIn .22s var(--ease); }
+/* Defense in depth: never let an empty block/bubble take up space. */
+.term-block:empty { display: none; margin: 0; gap: 0; }
 @keyframes blockIn {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: none; }

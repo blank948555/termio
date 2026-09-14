@@ -378,9 +378,10 @@
   }
 
   function appendBlockRecord(record) {
-    if (!state.activeSession) return;
+    if (!state.activeSession) return -1;
     if (!state.activeSession.blocks) state.activeSession.blocks = [];
     state.activeSession.blocks.push(record);
+    return state.activeSession.blocks.length - 1;
   }
 
   function restoreSessionBlocks(blocks) {
@@ -1295,7 +1296,8 @@
     blockNodes.push(running);
     const block = appendBlock(blockNodes);
 
-    appendBlockRecord({ kind: "cmd", text: cmd });
+    const recordStart = appendBlockRecord({ kind: "cmd", text: cmd });
+    const blockRecordStart = (typeof recordStart === "number") ? recordStart : (state.activeSession && state.activeSession.blocks ? state.activeSession.blocks.length : 0);
 
     setRunning(true);
 
@@ -1307,6 +1309,7 @@
     state.abortCtrl = abortCtrl;
 
     let gotToolOutput = false;
+    let assistantText = "";
     let responseItems = [];
 
     const networkEnabled = !!state.networkAccess;
@@ -1323,6 +1326,7 @@
         onEvent: (ev) => handleStreamEvent(ev, {
           running, block,
           onToolOut: () => { gotToolOutput = true; },
+          onAssistantText: (t) => { if (t) assistantText += t; },
           onItem: (item) => { responseItems.push(item); },
           onSession: (id) => { if (id) rememberSession(id); },
         }),
@@ -1335,6 +1339,11 @@
         appendAfter(block, unavailNode);
         appendBlockRecord({ kind: "out", text: "[shell unavailable]", cls: "unavail" });
       }
+
+      // If the block ended up with nothing to show (no command header and no
+      // rendered output), drop it entirely so we never leave an empty bubble,
+      // blank spacing, or an invisible assistant message in the history.
+      pruneEmptyBlock(block, blockRecordStart);
 
       if (responseItems.length > 0) {
         for (const item of responseItems) {
@@ -1366,6 +1375,9 @@
         appendBlockRecord({ kind: "out", text: errMsg, cls: "out-err" });
       }
 
+      // Never leave an empty block on an error path either.
+      pruneEmptyBlock(block, blockRecordStart);
+
       if (!gotToolOutput && !assistantText.trim() && state.conversation[state.conversation.length - 1] === userInput) {
         state.conversation.pop();
       }
@@ -1374,6 +1386,31 @@
       state.abortCtrl = null;
       focusInput();
     }
+  }
+
+  // Remove a terminal block that has no visible content to show. A block is
+  // considered empty when it contains neither the command header line nor any
+  // rendered output/meta nodes. This prevents empty bubbles, blank spacing,
+  // and invisible assistant messages from lingering in the terminal history.
+  // recordStart is the index in state.activeSession.blocks where this block's
+  // records began, so we can drop exactly those records and nothing else.
+  function pruneEmptyBlock(block, recordStart) {
+    if (!block) return;
+    const hasCmdLine = !!block.querySelector(".cmd-line");
+    const hasOutput = !!block.querySelector(".term-out, .term-meta");
+    if (hasCmdLine || hasOutput) return;
+    block.remove();
+    truncateBlockRecords(recordStart);
+    renderWelcome(false);
+  }
+
+  // Drop exactly the records that belonged to a pruned block (from recordStart
+  // onward), so the persisted session store matches what is on screen.
+  function truncateBlockRecords(recordStart) {
+    if (!state.activeSession || !Array.isArray(state.activeSession.blocks)) return;
+    const blocks = state.activeSession.blocks;
+    if (typeof recordStart !== "number" || recordStart < 0 || recordStart >= blocks.length) return;
+    blocks.length = recordStart;
   }
 
   function setRunning(on) {
@@ -1473,12 +1510,29 @@
     if (!item) return;
 
     if (item.type === "message") {
-      // Eliminate all assistant commentary, summaries, explanations, diagnoses, and conversational follow-ups.
+      // Eliminate all assistant commentary, summaries, explanations, diagnoses,
+      // and conversational follow-ups from the terminal. We never render these
+      // as a visible bubble, but we do track the text so the conversation state
+      // stays accurate (e.g. rolling back a failed turn cleanly).
+      if (ctx.onAssistantText) {
+        const content = item.content;
+        if (Array.isArray(content)) {
+          for (const part of content) {
+            const t = part && (part.text != null ? part.text : part.output_text);
+            if (t) ctx.onAssistantText(String(t));
+          }
+        } else if (typeof content === "string") {
+          ctx.onAssistantText(content);
+        }
+      }
       return;
     }
 
     if (item.type === "openrouter:shell" || item.type === "shell_call_output" || item.type === "openrouter_shell_tool_result") {
       renderShellResult(item, ctx.block);
+      // A shell result item means the shell actually executed (even when it
+      // produced no stdout/stderr), so this counts as tool output and must NOT
+      // trigger the [shell unavailable] fallback.
       ctx.onToolOut();
       return;
     }
@@ -1492,15 +1546,18 @@
 
   function renderShellResult(item, block) {
     const out = item.output || [];
+    let rendered = false;
     if (Array.isArray(out)) {
       for (const cmd of out) {
         if (cmd.stdout) {
           appendAfter(block, mkOut(cmd.stdout));
           appendBlockRecord({ kind: "out", text: cmd.stdout });
+          rendered = true;
         }
         if (cmd.stderr) {
           appendAfter(block, mkOut(cmd.stderr, "out-err"));
           appendBlockRecord({ kind: "out", text: cmd.stderr, cls: "out-err" });
+          rendered = true;
         }
         if (cmd.outcome) {
           const parts = [];
@@ -1509,13 +1566,16 @@
           if (parts.length) {
             appendAfter(block, mkMeta(parts));
             appendBlockRecord({ kind: "meta", parts });
+            rendered = true;
           }
         }
       }
-    } else if (typeof out === "string") {
+    } else if (typeof out === "string" && out) {
       appendAfter(block, mkOut(out));
       appendBlockRecord({ kind: "out", text: out });
+      rendered = true;
     }
+    return rendered;
   }
 
   function renderFunctionCallOutput(item, block) {
@@ -1526,20 +1586,26 @@
     let parsed = null;
     try { parsed = JSON.parse(out); } catch (e) {}
     if (parsed && Array.isArray(parsed.output)) {
-      renderShellResult({ output: parsed.output }, block);
+      return renderShellResult({ output: parsed.output }, block);
     } else if (parsed && parsed.stdout != null) {
+      let rendered = false;
       if (parsed.stdout) {
         appendAfter(block, mkOut(parsed.stdout));
         appendBlockRecord({ kind: "out", text: parsed.stdout });
+        rendered = true;
       }
       if (parsed.stderr) {
         appendAfter(block, mkOut(parsed.stderr, "out-err"));
         appendBlockRecord({ kind: "out", text: parsed.stderr, cls: "out-err" });
+        rendered = true;
       }
-    } else {
+      return rendered;
+    } else if (out) {
       appendAfter(block, mkOut(out));
       appendBlockRecord({ kind: "out", text: out });
+      return true;
     }
+    return false;
   }
 
   function handleCompletedResponse(resp, ctx) {
