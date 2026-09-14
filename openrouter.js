@@ -172,6 +172,16 @@
       return false;
     }
 
+    // Tool calling is mandatory for Termio: the only way to run a command is
+    // for the model to emit an openrouter:shell call. The OpenRouter catalog
+    // advertises tool support via "tools" (and "tool_choice") in the model's
+    // supported_parameters array. Models that lack tool support never emit a
+    // shell call, so every command would print [shell unavailable]. Filter
+    // them out so only models that can actually drive the shell are offered.
+    const supported = Array.isArray(m.supported_parameters) ? m.supported_parameters : [];
+    const supLower = supported.map((p) => String(p).toLowerCase());
+    if (!supLower.includes("tools") && !supLower.includes("tool_choice")) return false;
+
     return true;
   }
 
@@ -381,26 +391,40 @@
     return n == null ? null : n * 1_000_000;
   }
 
-  // Select a cheap default model purely from the live catalog (no hardcoded
-  // model IDs). Prefer a free model, otherwise the cheapest by prompt price.
+  // Whether a catalog model advertises tool calling (tools/tool_choice in
+  // supported_parameters). Termio can only run commands through models that
+  // can emit an openrouter:shell call.
+  function supportsTools(m) {
+    const supported = Array.isArray(m && m.supported_parameters) ? m.supported_parameters : [];
+    const supLower = supported.map((p) => String(p).toLowerCase());
+    return supLower.includes("tools") || supLower.includes("tool_choice");
+  }
+
+  // Select a default model purely from the live catalog (no hardcoded model
+  // IDs), preferring a free tool-capable model, otherwise the cheapest tool-
+  // capable model by prompt price. Tool support is mandatory: without it the
+  // model never calls openrouter:shell and every command prints
+  // [shell unavailable].
   function selectDefaultModel(models) {
     if (!Array.isArray(models) || models.length === 0) return null;
+    const capable = models.filter(supportsTools);
+    const pool = capable.length > 0 ? capable : models;
 
-    const freeModels = models.filter(isFree);
+    const freeModels = pool.filter(isFree);
     if (freeModels.length > 0) {
-      // Among free models, prefer the larger context length as a tie-breaker.
+      // Among free tool-capable models, prefer the larger context length.
       freeModels.sort((a, b) =>
         ((b.context_length || 0)) - ((a.context_length || 0)));
       return freeModels[0];
     }
 
-    const sortedByPrice = models.slice().sort((a, b) => {
+    const sortedByPrice = pool.slice().sort((a, b) => {
       const pa = promptPricePerM(a) ?? Infinity;
       const pb = promptPricePerM(b) ?? Infinity;
       return pa - pb;
     });
 
-    return sortedByPrice[0] || models[0];
+    return sortedByPrice[0] || pool[0];
   }
 
   // ---- Model display helpers ----
@@ -422,6 +446,7 @@
     TERMINAL_INSTRUCTIONS,
     fetchModels,
     isTextChatModel,
+    supportsTools,
     selectDefaultModel,
     streamResponse,
     buildRequest,

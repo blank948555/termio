@@ -109,11 +109,10 @@
     {
       version: "v1.0",
       items: [
-        "Welcome to the first beta of Termio.",
-        "Dynamic OpenRouter model discovery with live per-token pricing and context lengths.",
-        "Hosted Linux container shell integration with container_auto network policy allowlist injection.",
-        "Dark terminal theme with multi-step setup wizard, mobile-responsive topbar, and fullscreen settings.",
-        "Custom fullscreen warnings for dangerous commands, data resets, and key management.",
+        "Termio is a browser terminal, not a chat app. Type a command, it runs in a real hosted Linux sandbox, and the real stdout/stderr is shown.",
+        "One command in, one command out. Termio never runs follow-ups, retries, or extra steps on its own.",
+        "Commands run through OpenRouter's openrouter:shell tool. Output is the actual result — nothing is invented or guessed.",
+        "If the shell can't run a command, it prints [shell unavailable] and stops rather than faking an answer.",
       ],
     },
   ];
@@ -588,6 +587,14 @@
     loadModels().then(() => {
       if (state.modelId) {
         state.model = findModelById(state.modelId);
+      }
+      // Tool calling is mandatory: the only way to run a command is via an
+      // openrouter:shell call. If a previously saved model no longer (or never
+      // did) advertise tool support, replace it with a capable default so the
+      // terminal works instead of printing [shell unavailable] on everything.
+      if (state.model && !OpenRouter.supportsTools(state.model)) {
+        state.model = null;
+        state.modelId = null;
       }
       if (!state.model) {
         const defaultM = OpenRouter.selectDefaultModel(state.models);
