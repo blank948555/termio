@@ -53,6 +53,8 @@
   const $setChangelog = el("set-changelog");
   const $setVersion = el("set-version");
   const $setNetworkAccessBtn = el("set-network-access-btn");
+  const $setNetworkSwitch = el("set-network-switch");
+  const $setNetworkSub = el("set-network-sub");
 
   // network access
   const $networkAccess = el("network-access");
@@ -234,10 +236,122 @@
     return line;
   }
 
+  function parseAnsi(text) {
+    if (!text) {
+      const span = document.createElement("span");
+      span.textContent = "";
+      return span;
+    }
+
+    const fgColors = {
+      30: "var(--bg)", 31: "var(--err)", 32: "var(--ok)", 33: "var(--warn)",
+      34: "#64b5f6", 35: "#ba68c8", 36: "#4dd0e1", 37: "var(--fg)",
+      90: "var(--muted)", 91: "#ff8a80", 92: "#b9f6ca", 93: "#ffe57f",
+      94: "#82b1ff", 95: "#ea80fc", 96: "#80d8ff", 97: "#ffffff"
+    };
+    const bgColors = {
+      40: "var(--bg)", 41: "#5c0000", 42: "#003b00", 43: "#4d3800",
+      44: "#002171", 45: "#4a0072", 46: "#004d40", 47: "#37474f",
+      100: "#212121", 101: "#b71c1c", 102: "#1b5e20", 103: "#f57f17",
+      104: "#0d47a1", 105: "#4a148c", 106: "#006064", 107: "#eceff1"
+    };
+
+    const container = document.createElement("span");
+    const regex = /\x1b\[([0-9;]*)m|\x1b\[[0-9;]*[a-zA-Z]|\x1b\][^\x07\x1b]*(\x07|\x1b\\)/g;
+
+    let lastIndex = 0;
+    let match;
+
+    let currentFg = null;
+    let currentBg = null;
+    let isBold = false;
+    let isDim = false;
+    let isUnderline = false;
+
+    let currentSpan = null;
+
+    function getSpan() {
+      if (!currentSpan) {
+        currentSpan = document.createElement("span");
+        const styles = [];
+        if (currentFg) styles.push("color:" + currentFg);
+        if (currentBg) styles.push("background-color:" + currentBg);
+        if (isBold) styles.push("font-weight:bold");
+        if (isDim) styles.push("opacity:0.75");
+        if (isUnderline) styles.push("text-decoration:underline");
+        if (styles.length) currentSpan.style.cssText = styles.join(";");
+        container.appendChild(currentSpan);
+      }
+      return currentSpan;
+    }
+
+    while ((match = regex.exec(text)) !== null) {
+      const plainText = text.slice(lastIndex, match.index);
+      if (plainText) {
+        getSpan().appendChild(document.createTextNode(plainText));
+      }
+      lastIndex = regex.lastIndex;
+
+      if (match[0].endsWith("m") && match[1] !== undefined) {
+        const codes = match[1] ? match[1].split(";").map(Number) : [0];
+        for (let i = 0; i < codes.length; i++) {
+          const code = codes[i];
+          if (code === 0) {
+            currentFg = null; currentBg = null; isBold = false; isDim = false; isUnderline = false;
+          } else if (code === 1) {
+            isBold = true;
+          } else if (code === 2) {
+            isDim = true;
+          } else if (code === 4) {
+            isUnderline = true;
+          } else if (code === 22) {
+            isBold = false; isDim = false;
+          } else if (code === 24) {
+            isUnderline = false;
+          } else if (code === 39) {
+            currentFg = null;
+          } else if (code === 49) {
+            currentBg = null;
+          } else if (fgColors[code]) {
+            currentFg = fgColors[code];
+          } else if (bgColors[code]) {
+            currentBg = bgColors[code];
+          } else if (code === 38 || code === 48) {
+            const isFg = (code === 38);
+            if (codes[i + 1] === 5 && codes[i + 2] !== undefined) {
+              const cVal = codes[i + 2];
+              if (fgColors[cVal]) {
+                if (isFg) currentFg = fgColors[cVal]; else currentBg = bgColors[cVal] || fgColors[cVal];
+              }
+              i += 2;
+            } else if (codes[i + 1] === 2 && codes[i + 4] !== undefined) {
+              const rgb = "rgb(" + codes[i + 2] + "," + codes[i + 3] + "," + codes[i + 4] + ")";
+              if (isFg) currentFg = rgb; else currentBg = rgb;
+              i += 4;
+            }
+          }
+        }
+        currentSpan = null;
+      }
+    }
+
+    const remaining = text.slice(lastIndex);
+    if (remaining) {
+      getSpan().appendChild(document.createTextNode(remaining));
+    }
+
+    return container;
+  }
+
   function mkOut(text, cls) {
     const out = document.createElement("div");
     out.className = "term-out is-new" + (cls ? " " + cls : "");
-    out.textContent = text == null ? "" : String(text);
+    const str = text == null ? "" : String(text);
+    if (str.indexOf("\x1b") !== -1 || str.indexOf("\u001b") !== -1) {
+      out.appendChild(parseAnsi(str));
+    } else {
+      out.textContent = str;
+    }
     return out;
   }
 
@@ -451,8 +565,8 @@
     if (prefs && typeof prefs === "object") {
       state.prefs = Object.assign(state.prefs, prefs);
     }
-    // networkAccess default: ON (allowlist) unless explicitly turned off.
-    state.networkAccess = Storage._mem.networkAccess !== false;
+    // networkAccess default MUST be OFF (false) unless explicitly enabled
+    state.networkAccess = Storage._mem.networkAccess === true;
 
     $setup.hidden = true;
     $app.hidden = false;
@@ -916,8 +1030,20 @@
     $setClear.checked = !!state.prefs.clearOnCmd;
     $setHeaders.checked = !!state.prefs.showHeaders;
     if ($setVersion) $setVersion.textContent = VERSION;
+    updateNetworkAccessUI();
     renderModelPill();
     $settings.hidden = false;
+  }
+
+  function updateNetworkAccessUI() {
+    const isOn = !!state.networkAccess;
+    if ($setNetworkSwitch) $setNetworkSwitch.checked = isOn;
+    if ($networkAccessSwitch) $networkAccessSwitch.checked = isOn;
+    if ($setNetworkSub) {
+      $setNetworkSub.textContent = isOn
+        ? "ON — Allowlist active (api.github.com, PyPI)"
+        : "OFF — Outbound shell networking disabled";
+    }
   }
 
   function updateKeyStatusBadge() {
@@ -1001,7 +1127,7 @@
       state.sessionId = null;
       state.activeSession = null;
       state.models = [];
-      state.networkAccess = true;
+      state.networkAccess = false;
       $termOutput.innerHTML = "";
       closeSettings();
       closePicker();
@@ -1026,10 +1152,20 @@
     focusInput();
   }
 
+  if ($setNetworkSwitch) {
+    $setNetworkSwitch.addEventListener("change", async () => {
+      state.networkAccess = $setNetworkSwitch.checked;
+      try { await Storage.setSetting("networkAccess", state.networkAccess); } catch (e) {}
+      updateNetworkAccessUI();
+      toast(state.networkAccess ? "Network access enabled" : "Network access disabled");
+    });
+  }
+
   if ($networkAccessSwitch) {
     $networkAccessSwitch.addEventListener("change", async () => {
       state.networkAccess = $networkAccessSwitch.checked;
       try { await Storage.setSetting("networkAccess", state.networkAccess); } catch (e) {}
+      updateNetworkAccessUI();
       toast(state.networkAccess ? "Network access enabled" : "Network access disabled");
     });
   }
@@ -1160,13 +1296,8 @@
     state.abortCtrl = abortCtrl;
 
     let gotToolOutput = false;
-    let renderedText = false;
-    let assistantText = "";
+    let responseItems = [];
 
-    // Termio is a terminal, not an autonomous agent: limit each user command to
-    // a single shell tool call so the model can run the one requested command
-    // and then must respond. This prevents autonomous multi-step follow-up loops
-    // (trying alternatives, diagnosing, building from source, etc.).
     const networkEnabled = !!state.networkAccess;
 
     try {
@@ -1181,32 +1312,23 @@
         onEvent: (ev) => handleStreamEvent(ev, {
           running, block,
           onToolOut: () => { gotToolOutput = true; },
-          onText: (t) => { assistantText += t; },
-          onRenderedText: () => { renderedText = true; },
+          onItem: (item) => { responseItems.push(item); },
           onSession: (id) => { if (id) rememberSession(id); },
         }),
       });
 
       running.remove();
 
-      if (!gotToolOutput && !renderedText) {
-        if (assistantText.trim()) {
-          const textNode = mkOut(assistantText.trim());
-          appendAfter(block, textNode);
-          appendBlockRecord({ kind: "out", text: assistantText.trim() });
-        } else {
-          const unavailNode = mkOut("[shell unavailable]", "unavail");
-          appendAfter(block, unavailNode);
-          appendBlockRecord({ kind: "out", text: "[shell unavailable]", cls: "unavail" });
-        }
+      if (!gotToolOutput) {
+        const unavailNode = mkOut("[shell unavailable]", "unavail");
+        appendAfter(block, unavailNode);
+        appendBlockRecord({ kind: "out", text: "[shell unavailable]", cls: "unavail" });
       }
 
-      if (assistantText.trim()) {
-        state.conversation.push({
-          type: "message", role: "assistant", id: "msg_" + Date.now(),
-          status: "completed",
-          content: [{ type: "output_text", text: assistantText, annotations: [] }],
-        });
+      if (responseItems.length > 0) {
+        for (const item of responseItems) {
+          state.conversation.push(item);
+        }
       }
 
       state.activeSession.conversation = state.conversation;
@@ -1286,9 +1408,21 @@
     }
 
     switch (ev.type) {
-      case "response.created": {
-        const id = ev.response && ev.response.id;
+      case "response.created":
+      case "response.done": {
+        const resp = ev.response || {};
+        const id = ev.session_id || resp.session_id || resp.id;
         if (id) ctx.onSession(id);
+        if (ev.type === "response.done" && resp.usage) {
+          const u = resp.usage;
+          const parts = [];
+          if (u.input_tokens != null) parts.push("in " + u.input_tokens + " tok");
+          if (u.output_tokens != null) parts.push("out " + u.output_tokens + " tok");
+          if (parts.length) {
+            appendAfter(ctx.block, mkMeta(parts));
+            appendBlockRecord({ kind: "meta", parts });
+          }
+        }
         break;
       }
       case "response.output_item.added": {
@@ -1297,15 +1431,12 @@
       case "response.output_item.done": {
         const item = ev.item;
         if (!item) break;
+        if (ctx.onItem) ctx.onItem(item);
         renderItemOutput(item, ctx);
         break;
       }
       case "response.content_part.delta":
       case "response.output_text.delta": {
-        const d = ev.delta;
-        if (typeof d === "string" && d.length) {
-          ctx.onText(d);
-        }
         break;
       }
       case "response.done": {
@@ -1331,18 +1462,7 @@
     if (!item) return;
 
     if (item.type === "message") {
-      const content = item.content || [];
-      let text = "";
-      for (const c of content) {
-        if (c.type === "output_text" && c.text) text += c.text;
-      }
-      const t = text.replace(/\s+$/, "");
-      if (t) {
-        appendAfter(ctx.block, mkOut(t));
-        appendBlockRecord({ kind: "out", text: t });
-        ctx.onText(text);
-        if (ctx.onRenderedText) ctx.onRenderedText();
-      }
+      // Eliminate all assistant commentary, summaries, explanations, diagnoses, and conversational follow-ups.
       return;
     }
 
