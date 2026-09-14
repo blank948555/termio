@@ -25,6 +25,7 @@
   const $termWelcome = el("term-welcome");
   const $cmdForm = el("cmd-form");
   const $cmdInput = el("cmd-input");
+  const $stopBtn = el("stop-btn");
   const $toast = el("toast");
 
   // picker
@@ -56,6 +57,7 @@
   // network access
   const $networkAccess = el("network-access");
   const $networkAccessClose = el("network-access-close");
+  const $networkAccessSwitch = el("network-access-switch");
 
   // changelog
   const $changelog = el("changelog");
@@ -81,6 +83,7 @@
     modelId: null,
     model: null,           // selected model object
     prefs: { clearOnCmd: false, showHeaders: true },
+    networkAccess: true,   // shell container outbound network (allowlist when on)
     models: [],            // catalog cache
     modelsCacheAt: 0,
     activeCat: "all",
@@ -306,7 +309,7 @@
       "TERMIO",
       state.apiKey ? "OpenRouter API: Connected" : "OpenRouter API: Not Configured",
       "Shell Environment: Ready (Hosted Linux Sandbox)",
-      "Enter a command or ask the terminal to begin."
+      "Enter a command to begin."
     ];
 
     if (!animate) {
@@ -448,6 +451,8 @@
     if (prefs && typeof prefs === "object") {
       state.prefs = Object.assign(state.prefs, prefs);
     }
+    // networkAccess default: ON (allowlist) unless explicitly turned off.
+    state.networkAccess = Storage._mem.networkAccess !== false;
 
     $setup.hidden = true;
     $app.hidden = false;
@@ -996,6 +1001,7 @@
       state.sessionId = null;
       state.activeSession = null;
       state.models = [];
+      state.networkAccess = true;
       $termOutput.innerHTML = "";
       closeSettings();
       closePicker();
@@ -1012,10 +1018,20 @@
   $networkAccessClose.addEventListener("click", closeNetworkAccess);
 
   function openNetworkAccess() {
+    if ($networkAccessSwitch) $networkAccessSwitch.checked = !!state.networkAccess;
     $networkAccess.hidden = false;
   }
   function closeNetworkAccess() {
     $networkAccess.hidden = true;
+    focusInput();
+  }
+
+  if ($networkAccessSwitch) {
+    $networkAccessSwitch.addEventListener("change", async () => {
+      state.networkAccess = $networkAccessSwitch.checked;
+      try { await Storage.setSetting("networkAccess", state.networkAccess); } catch (e) {}
+      toast(state.networkAccess ? "Network access enabled" : "Network access disabled");
+    });
   }
 
   // ---- changelog ----
@@ -1066,6 +1082,13 @@
     const cmd = $cmdInput.value;
     runCommand(cmd);
     $cmdInput.value = "";
+  });
+
+  // Stop button: immediately cancel the current generation/tool loop. No retry.
+  $stopBtn.addEventListener("click", () => {
+    if (state.abortCtrl) {
+      try { state.abortCtrl.abort(); } catch (e) {}
+    }
   });
 
   async function runCommand(raw) {
@@ -1140,12 +1163,20 @@
     let renderedText = false;
     let assistantText = "";
 
+    // Termio is a terminal, not an autonomous agent: limit each user command to
+    // a single shell tool call so the model can run the one requested command
+    // and then must respond. This prevents autonomous multi-step follow-up loops
+    // (trying alternatives, diagnosing, building from source, etc.).
+    const networkEnabled = !!state.networkAccess;
+
     try {
       await OpenRouter.streamResponse({
         apiKey: state.apiKey,
         model: state.modelId,
         input: input,
         sessionId: state.sessionId || undefined,
+        maxToolCalls: 1,
+        networkEnabled: networkEnabled,
         signal: abortCtrl.signal,
         onEvent: (ev) => handleStreamEvent(ev, {
           running, block,
@@ -1219,6 +1250,9 @@
     $menuBtn.disabled = on;
     $historyBtn.disabled = on;
     $newSessionBtn.disabled = on;
+    if ($stopBtn) $stopBtn.hidden = !on;
+    // While running, hide the send affordance (input is disabled); show Stop.
+    // When idle, hide Stop and restore normal input.
   }
 
   function appendAfter(block, node) {
