@@ -33,8 +33,17 @@ Plain HTML, CSS, and JavaScript. No frameworks, no build tooling.
    dedicated fullscreen views (no cramped popups). The version number lives in
    Settings → Version & Changelog, not on the home screen.
 4. Commands run via the Responses API with `tools: [{ type: "openrouter:shell",
-   parameters: { engine: "openrouter" } }]`, always using the selected model.
+   parameters: { engine: "openrouter", environment: { type: "container_auto",
+   network_policy: {...} } } }]`, always using the selected model. Network
+   access is a real on/off toggle: enabled applies an allowlist of approved
+   domains; disabled sets the container network policy to `disabled` (no
+   outbound internet access).
 5. Real shell output is rendered exactly; if Shell is unavailable it prints
    `[shell unavailable]` and never fabricates results.
+6. Termio is an intelligent terminal, not a chat assistant or autonomous
+   agent. One user command runs one command, then Termio waits for the next
+   input. Each request is capped to a single shell tool call, so a command that
+   fails shows its real error and stops — it does not autonomously retry,
+   diagnose, or try alternatives. A Stop button cancels any running generation.
 
 Open the `index.html` in any modern browser, or serve the folder statically.

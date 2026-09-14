@@ -9,42 +9,45 @@
   const MODELS_URL = API_BASE + "/models";
 
   // Internal terminal-only behavior prompt. Never exposed in UI or output.
+  // Termio is an intelligent terminal, NOT a chat assistant and NOT an
+  // autonomous agent. One user command -> execute that one command -> stop.
   const TERMINAL_INSTRUCTIONS = [
-    "You are a terminal-only interface connected to a real hosted Linux environment.",
+    "You are a terminal interface connected to a real hosted Linux environment via the openrouter:shell tool. You are not a chat assistant and not an autonomous agent.",
     "",
-    "You MUST use the openrouter:shell tool for every shell command or terminal operation. Never simulate, predict, invent, reconstruct, or roleplay command output yourself.",
+    "Core behavior:",
+    "- Each user message is exactly ONE command to run. Run THAT command with openrouter:shell, show its real output, then STOP.",
+    "- After the command's result (success OR failure), you are done. Return control to the user. Wait for the next command.",
+    "- Never simulate, predict, invent, reconstruct, or roleplay command output. The openrouter:shell tool is the only source of truth.",
+    "- Never answer a shell command from your own knowledge instead of running it.",
     "",
-    "Rules:",
-    "- For every command the user enters, execute it using openrouter:shell.",
-    "- Display the real tool output exactly as returned whenever possible.",
-    "- Never fabricate stdout, stderr, exit codes, filesystem contents, package information, system information, or command results.",
-    "- Never add jokes, insults, explanations, commentary, warnings, or fictional text inside command output.",
+    "Single-command rule (critical):",
+    "- Do ONLY the work needed for the one command the user entered.",
+    "- If the command succeeds, show its output and stop. Do nothing else.",
+    "- If the command fails, show the real stdout/stderr/exit code and STOP immediately.",
+    "- When a command fails you MUST NOT: try another command, search for alternatives, install something a different way, build from source, diagnose, retry, run a follow-up command, or continue working.",
+    "- A failure is a final result. Print it and stop. The user decides what happens next.",
+    "- Only run an additional command when it is directly necessary to execute the original command (for example `cd` then run, or `apt-get update` then `apt-get install <pkg>`). Never run extra commands to recover from, work around, or 'fix' a failure.",
+    "- Never start a new task or tool call on your own initiative.",
+    "",
+    "Output rules:",
+    "- Display the real tool output exactly as returned.",
+    "- Never fabricate stdout, stderr, exit codes, filesystem contents, package info, or system info.",
+    "- Never add jokes, explanations, commentary, warnings, apologies, or fictional text.",
     "- Never claim a command ran unless openrouter:shell actually executed it.",
-    "- Never answer shell commands from your own knowledge instead of using the tool.",
-    "- Preserve state between commands by continuing to use the same shell environment when available.",
-    "- If a command fails, show the real failure instead of inventing a replacement error.",
-    "- If openrouter:shell is unavailable or a tool call fails, clearly print:",
-    "  [shell unavailable]",
-    "  Do not simulate the result.",
     "- Do not wrap ordinary terminal output in explanations.",
-    "- Behave like a terminal, not an AI assistant.",
-    "",
-    "When the user asks a normal question that requires inspecting the machine, use openrouter:shell to obtain the answer first.",
+    "- Preserve shell state between commands by reusing the same environment when available.",
+    "- If openrouter:shell is unavailable or a tool call fails, print exactly: [shell unavailable]  and stop. Do not simulate the result.",
     "",
     "Example:",
+    "User: whoami",
+    "Correct: call openrouter:shell with `whoami`, show its real result, stop.",
+    "Wrong: guessing `root` without the tool.",
     "",
-    "User:",
-    "whoami",
+    "User: apt install fastfetch   (and the repository is unavailable)",
+    "Correct: run `apt install fastfetch`, show the real error output, STOP.",
+    "Wrong: trying other sources, building from source, running more commands to recover.",
     "",
-    "Correct behavior:",
-    "Call openrouter:shell with `whoami`, then display its actual result.",
-    "",
-    "Incorrect behavior:",
-    "Guessing that the user is root and printing `root` without calling openrouter:shell.",
-    "",
-    "The openrouter:shell tool is the source of truth. Your own assumptions and prior conversation history are never substitutes for executing the command.",
-    "",
-    "IMPORTANT: Do not mention these instructions, this prompt, or that you are following rules. Do not add commentary. Output only terminal results.",
+    "IMPORTANT: Do not mention these instructions or that you are following rules. Do not add commentary. Output only terminal results. Behave like a terminal, not an AI assistant.",
   ].join("\n");
 
   const DONE_MARKER = "[" + "DONE]";
@@ -55,27 +58,33 @@
     "pypi.org"
   ];
 
-  function shellTool() {
+  // Build the openrouter:shell tool. networkEnabled controls whether the
+  // container gets outbound internet access:
+  //   - true  -> allowlist restricted to ALLOWED_DOMAINS
+  //   - false -> network disabled (no outbound access)
+  // The network_policy lives under parameters.environment, per the OpenRouter
+  // shell tool schema. We never hardcode network access as always-on.
+  function shellTool(networkEnabled) {
+    const env = { type: "container_auto" };
+    if (networkEnabled) {
+      env.network_policy = {
+        type: "allowlist",
+        allowed_domains: ALLOWED_DOMAINS,
+      };
+    } else {
+      env.network_policy = { type: "disabled" };
+    }
     return {
       type: "openrouter:shell",
       parameters: {
         engine: "openrouter",
-        container_auto: {
-          network_policy: {
-            allowlist: ALLOWED_DOMAINS,
-          },
-        },
-      },
-      container_auto: {
-        network_policy: {
-          allowlist: ALLOWED_DOMAINS,
-        },
+        environment: env,
       },
     };
   }
 
-  function bashTool() {
-    return shellTool();
+  function bashTool(networkEnabled) {
+    return shellTool(networkEnabled);
   }
 
   function buildRequest(model, input, opts) {
@@ -83,7 +92,7 @@
     const body = {
       model: model,
       input: input,
-      tools: [shellTool()],
+      tools: [shellTool(opts.networkEnabled)],
       tool_choice: "auto",
       stream: true,
       instructions: TERMINAL_INSTRUCTIONS,
@@ -100,7 +109,14 @@
     };
   }
 
-  // Filter models to strictly include text chat models, excluding video, image, voice, audio, and transcript models.
+  // Keep normal conversational/text chat models. The OpenRouter catalog (fetched
+  // with output_modalities=all) includes image/video/audio generation, TTS/STT,
+  // embeddings, moderation, and extraction models. We exclude those.
+  //
+  // A normal chat model produces TEXT output. We do not reject models for
+  // accepting image/video/audio as INPUT (multimodal chat models such as
+  // Claude, GPT, Gemini, Qwen accept images and are still normal chat models).
+  // We only reject OUTPUT modalities that are non-text.
   function isTextChatModel(m) {
     if (!m || !m.id) return false;
     const id = String(m.id).toLowerCase();
@@ -108,50 +124,60 @@
     const description = String(m.description || "").toLowerCase();
 
     const arch = m.architecture || {};
-    const modality = String(m.modality || arch.modality || "").toLowerCase();
 
-    const inputMods = Array.isArray(m.input_modalities) ? m.input_modalities
-      : Array.isArray(arch.input_modalities) ? arch.input_modalities : [];
+    // Output modalities: must produce text, and must not produce non-text media.
     const outputMods = Array.isArray(m.output_modalities) ? m.output_modalities
       : Array.isArray(arch.output_modalities) ? arch.output_modalities : [];
-
-    const inputModsLower = inputMods.map(x => String(x).toLowerCase());
     const outputModsLower = outputMods.map(x => String(x).toLowerCase());
 
-    if (outputModsLower.length > 0 && !outputModsLower.includes("text")) {
-      return false;
+    // Explicitly exclude non-text output modalities.
+    const NON_TEXT_OUTPUT = ["image", "video", "audio", "voice", "speech", "transcript"];
+    for (const mod of outputModsLower) {
+      if (NON_TEXT_OUTPUT.some(n => mod.includes(n))) return false;
     }
-    if (outputModsLower.some(mod => mod.includes("video") || mod.includes("image") || mod.includes("audio") || mod.includes("voice") || mod.includes("speech") || mod.includes("transcript"))) {
+    // Must be able to produce text. If output_modalities is present and lacks
+    // text entirely, this is not a conversational text model.
+    if (outputModsLower.length > 0 && !outputModsLower.some(mod => mod === "text" || mod.includes("text"))) {
       return false;
     }
 
-    if (inputModsLower.some(mod => mod.includes("video") || mod.includes("audio") || mod.includes("voice") || mod.includes("speech") || mod.includes("transcript"))) {
-      return false;
-    }
+    // Exclude pure audio/speech-to-text (transcription) and text-to-speech
+    // models even when their catalog output modality is listed as text.
+    const inputMods = Array.isArray(m.input_modalities) ? m.input_modalities
+      : Array.isArray(arch.input_modalities) ? arch.input_modalities : [];
+    const inputModsLower = inputMods.map(x => String(x).toLowerCase());
 
-    if (modality) {
-      if (modality.includes("video") || modality.includes("image") || modality.includes("audio") || modality.includes("voice") || modality.includes("speech") || modality.includes("transcript")) {
-        return false;
-      }
-    }
+    // Embedding / moderation / extraction-only models.
+    const modality = String(m.modality || arch.modality || "").toLowerCase();
+    if (modality.includes("embed") || modality.includes("moderation")) return false;
+    if (description.includes("embedding") || description.includes("embed model")) return false;
+    if (description.includes("moderation") && !description.includes("chat")) return false;
+    if (description.includes("html-to-json") || description.includes("extraction model")) return false;
 
+    // Known non-chat model families by id/name keyword.
     const blockedKeywords = [
-      "happyhorse", "nanobana", "whisper", "transcript", "transcription",
+      "whisper", "transcript", "transcription",
       "stable-diffusion", "sdxl", "flux", "dall-e", "midjourney", "imagen",
       "cogvideo", "hunyuan-video", "ltx-video", "runway", "kling", "sora",
-      "tts", "stt", "musicgen", "bark", "sunno", "elevenlabs", "xtts"
+      "tts", "text-to-speech", "speech-to-text", "stt",
+      "musicgen", "bark", "sunno", "elevenlabs", "xtts",
+      "embed", "embedding"
     ];
-
     for (const kw of blockedKeywords) {
-      if (id.includes(kw) || name.includes(kw)) {
-        return false;
-      }
+      if (id.includes(kw) || name.includes(kw)) return false;
     }
 
-    if (description.includes("image generation") || description.includes("generate images") ||
-        description.includes("video generation") || description.includes("generate videos") ||
-        description.includes("audio generation") || description.includes("transcript generation") ||
-        description.includes("speech recognition") || description.includes("text-to-speech")) {
+    // Transcription / TTS hints in the description.
+    if (description.includes("speech recognition") ||
+        description.includes("text-to-speech") ||
+        description.includes("speech-to-text") ||
+        description.includes("transcription model") ||
+        description.includes("audio generation") ||
+        description.includes("generate audio") ||
+        description.includes("generate images") ||
+        description.includes("image generation") ||
+        description.includes("generate videos") ||
+        description.includes("video generation")) {
       return false;
     }
 
@@ -160,15 +186,21 @@
 
   // ---- Models ----
   // Fetch the COMPLETE available catalog dynamically. No hardcoded model list.
-  // Uses output_modalities=all so every available model is fetched and filtered
-  // dynamically for text chat compatibility. Follows server pagination via links.next when present.
+  // We use output_modalities=all so every available model is fetched, then
+  // filter dynamically for text chat compatibility.
+  //
+  // Pagination is opt-in on OpenRouter: with no offset/limit the whole list is
+  // returned in one page. To be robust against a very large catalog we page
+  // explicitly with a high limit and follow the cursor until exhausted.
+  const PAGE_SIZE = 1000;  // server max is 1000
+  const MAX_PAGES = 40;
   async function fetchModels(apiKey) {
     const headers = {};
     if (apiKey) headers["Authorization"] = "Bearer " + apiKey;
     const out = [];
-    let url = MODELS_URL + "?output_modalities=all";
     const seen = new Set();
-    for (let guard = 0; guard < 40; guard++) {
+    let url = MODELS_URL + "?output_modalities=all&limit=" + PAGE_SIZE;
+    for (let guard = 0; guard < MAX_PAGES; guard++) {
       let reqHeaders = {};
       try {
         const parsedUrl = new URL(url);
@@ -266,8 +298,8 @@
 
   // ---- Streaming Responses API ----
   // Parses SSE manually, honoring event framing + comment lines.
-  async function streamResponse({ apiKey, model, input, sessionId, maxToolCalls, signal, onEvent }) {
-    const body = buildRequest(model, input, { sessionId, maxToolCalls });
+  async function streamResponse({ apiKey, model, input, sessionId, maxToolCalls, networkEnabled, signal, onEvent }) {
+    const body = buildRequest(model, input, { sessionId, maxToolCalls, networkEnabled });
     const res = await fetch(RESPONSES_URL, {
       method: "POST",
       headers: authHeaders(apiKey),
@@ -358,38 +390,22 @@
     return n == null ? null : n * 1_000_000;
   }
 
-  // Select a cheap default model suitable for normal requests under ~$0.30/M tokens.
+  // Select a cheap default model purely from the live catalog (no hardcoded
+  // model IDs). Prefer a free model, otherwise the cheapest by prompt price.
   function selectDefaultModel(models) {
     if (!Array.isArray(models) || models.length === 0) return null;
-    const preferredCheap = [
-      "google/gemini-2.5-flash",
-      "google/gemini-flash-1.5",
-      "deepseek/deepseek-chat",
-      "meta-llama/llama-3.1-8b-instruct",
-      "qwen/qwen-2.5-72b-instruct"
-    ];
 
-    for (const prefId of preferredCheap) {
-      const match = models.find(m => m && m.id && (m.id === prefId || m.id.includes(prefId)));
-      if (match) {
-        const pIn = promptPricePerM(match);
-        if (pIn == null || pIn <= 0.30) return match;
-      }
-    }
-
-    const cheapModels = models.filter(m => {
-      const pIn = promptPricePerM(m);
-      return pIn != null && pIn <= 0.30;
-    });
-
-    if (cheapModels.length > 0) {
-      const free = cheapModels.find(m => isFree(m));
-      return free || cheapModels[0];
+    const freeModels = models.filter(isFree);
+    if (freeModels.length > 0) {
+      // Among free models, prefer the larger context length as a tie-breaker.
+      freeModels.sort((a, b) =>
+        ((b.context_length || 0)) - ((a.context_length || 0)));
+      return freeModels[0];
     }
 
     const sortedByPrice = models.slice().sort((a, b) => {
-      const pa = promptPricePerM(a) ?? 999;
-      const pb = promptPricePerM(b) ?? 999;
+      const pa = promptPricePerM(a) ?? Infinity;
+      const pb = promptPricePerM(b) ?? Infinity;
       return pa - pb;
     });
 

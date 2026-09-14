@@ -46,7 +46,7 @@
             <label class="field">
               <span class="field-label">API Key</span>
               <input id="setup-key" type="password" autocomplete="off" spellcheck="false" placeholder="sk-or-v1-…" />
-              <span class="field-hint">Your API key is stored exclusively in your browser's local IndexedDB. It never leaves your device and is never sent to any external server or proxy.</span>
+              <span class="field-hint">Stored only in this browser's local IndexedDB. It is sent only to OpenRouter to authenticate your model requests, and never logged, exposed in URLs, or shared with anyone else.</span>
             </label>
             <a id="get-key-link" href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-pill btn-full">
               Get an OpenRouter API key
@@ -79,11 +79,13 @@
         <!-- Step 3: Privacy & Data -->
         <div class="wizard-step" data-step="3" hidden>
           <h1 class="setup-title">Privacy &amp; Data</h1>
-          <p class="setup-sub">Understanding data routing and local persistence.</p>
+          <p class="setup-sub">How your data moves when using Termio.</p>
           <ul class="setup-points">
-            <li><strong>Message &amp; Shell Routing:</strong> Commands and responses route directly between your browser and OpenRouter via secure HTTPS endpoints.</li>
-            <li><strong>Local Key &amp; Session Storage:</strong> API keys, session logs, and user preferences are saved strictly on your local device using IndexedDB. Termio operates without intermediate servers or analytics tracking.</li>
-            <li><strong>Key Control &amp; Privacy:</strong> Your API key is stored client-side only and is never logged, forwarded to third parties, or exposed in plaintext. You can remove your key or reset all local data at any time in Settings.</li>
+            <li><strong>Prompts &amp; Commands:</strong> The commands you enter are sent to OpenRouter so it can process your model requests. The selected model and provider handle request content through OpenRouter's infrastructure.</li>
+            <li><strong>Hosted Shell:</strong> Shell and tool requests run on OpenRouter's hosted infrastructure in a sandboxed Linux container, not on your device.</li>
+            <li><strong>Network Access:</strong> When Network Access is enabled, requests from the hosted shell may reach the allowed external domains listed in Settings. When it is off, the container has no outbound internet access.</li>
+            <li><strong>Local Storage:</strong> Termio preferences, saved sessions, and history can remain on your device in IndexedDB. They are not required for the terminal to function and can be cleared anytime in Settings.</li>
+            <li><strong>API Keys:</strong> Your OpenRouter API key is stored only in this browser and is sent only where required to authenticate requests with the OpenRouter API. It is never logged, displayed publicly, added to URLs, or sent anywhere else.</li>
           </ul>
         </div>
 
@@ -146,8 +148,12 @@
       <form id="cmd-form" class="cmd-form">
         <input id="cmd-input" class="cmd-input" type="text" autocomplete="off" autocapitalize="off"
                autocorrect="off" spellcheck="false" enterkeyhint="send"
-               placeholder="Enter a command" aria-label="Command input" />
+               placeholder="Enter command" aria-label="Command input" />
       </form>
+      <button id="stop-btn" class="stop-btn" type="button" aria-label="Stop" title="Stop" hidden>
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/></svg>
+        <span class="stop-btn-label">Stop</span>
+      </button>
     </footer>
   </div>
 
@@ -233,7 +239,7 @@
         <button id="set-network-access-btn" class="row-pill row-pill-link" type="button">
           <span class="row-pill-main">
             <span class="row-pill-title">Network Access</span>
-            <span class="row-pill-sub">View allowed domain policies for shell containers</span>
+            <span class="row-pill-sub">Enable or disable outbound shell networking</span>
           </span>
           <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M9.4 6 8 7.4l4.6 4.6L8 16.6 9.4 18l6-6z"/></svg>
         </button>
@@ -288,8 +294,15 @@
       <span class="fs-spacer" aria-hidden="true"></span>
     </header>
     <div class="network-access-body">
+      <label class="field field-inline row-pill network-switch-row">
+        <span class="row-pill-main">
+          <span class="row-pill-title">Network Access</span>
+          <span class="row-pill-sub">Allow shell commands to connect to approved internet domains.</span>
+        </span>
+        <input id="network-access-switch" type="checkbox" class="switch" aria-label="Network Access" />
+      </label>
       <p class="settings-note">
-        Shell operations run inside an isolated OpenRouter container sandbox. Outbound network traffic is limited by container network policy configuration.
+        When enabled, the hosted shell container can reach the approved domains listed below over an allowlist. When disabled, the container has no outbound internet access.
       </p>
       <h3 class="settings-h">Allowed Domains</h3>
       <div class="domain-list">
