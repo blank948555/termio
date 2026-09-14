@@ -7,6 +7,15 @@
   <meta name="description" content="Termio — a dedicated browser terminal powered by OpenRouter hosted Shell." />
   <title>Termio</title>
   <link rel="stylesheet" href="source/css/styles.css" />
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-HNR5XW5LXZ"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'G-HNR5XW5LXZ');
+  </script>
 </head>
 <body>
   <!-- ===================== SETUP WIZARD (multi-step) ===================== -->
@@ -109,6 +118,7 @@
             <li><strong>Network Access:</strong> When Network Access is enabled, requests from the hosted shell may reach the allowed external domains listed in Settings. When it is off, the container has no outbound internet access. This is an alpha-stage feature and is not fully tested.</li>
             <li><strong>Local Storage:</strong> Termio preferences, saved sessions, and history can remain on your device in IndexedDB. They are not required for the terminal to function and can be cleared anytime in Settings.</li>
             <li><strong>API Keys:</strong> Your OpenRouter API key is stored only in this browser and is sent only where required to authenticate requests with the OpenRouter API. It is never logged, displayed publicly, added to URLs, or sent anywhere else.</li>
+            <li><strong>Analytics:</strong> Termio uses Google Analytics (gtag.js, measurement ID G-HNR5XW5LXZ) to collect anonymized usage statistics, such as page views and basic interaction events, to help understand how the app is used. This data is sent to Google and processed under Google's privacy policy. Analytics does not include your prompts, commands, API keys, or terminal output, and you can clear it anytime from your browser alongside other local data.</li>
           </ul>
         </div>
 
