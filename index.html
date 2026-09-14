@@ -34,7 +34,7 @@
           <ul class="setup-points">
             <li>Termio runs real shell commands inside an isolated hosted Linux sandbox.</li>
             <li>You bring your own OpenRouter API key. Termio never proxies or logs your keys.</li>
-            <li>Designed for true AMOLED black screens with dynamic model catalog discovery.</li>
+            <li>Designed with a sleek dark theme and dynamic model catalog discovery.</li>
           </ul>
         </div>
 
@@ -46,7 +46,7 @@
             <label class="field">
               <span class="field-label">API Key</span>
               <input id="setup-key" type="password" autocomplete="off" spellcheck="false" placeholder="sk-or-v1-…" />
-              <span class="field-hint">Your key is stored securely on this device only. Masked without show/eye buttons.</span>
+              <span class="field-hint">Your API key is stored exclusively in your browser's local IndexedDB. It never leaves your device and is never sent to any external server or proxy.</span>
             </label>
             <a id="get-key-link" href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-pill btn-full">
               Get an OpenRouter API key
@@ -56,8 +56,19 @@
 
         <!-- Step 2: Shell Warning -->
         <div class="wizard-step" data-step="2" hidden>
-          <h1 class="setup-title">Shell Warning</h1>
-          <p class="setup-sub">Important compliance and container execution notice.</p>
+          <div class="setup-warning-header">
+            <div class="setup-warning-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                <line x1="12" y1="9" x2="12" y2="13"/>
+                <line x1="12" y1="17" x2="12.01" y2="17"/>
+              </svg>
+            </div>
+            <div>
+              <h1 class="setup-title">Shell Warning</h1>
+              <p class="setup-sub">Important compliance and container execution notice.</p>
+            </div>
+          </div>
           <div class="setup-warning-box">
             <p><strong>Hosted Container Environment:</strong> Shell operations run in a limited, remote Linux container provided by OpenRouter, not on your local device.</p>
             <p><strong>Policy Compliance:</strong> Misuse of shell commands or violation of OpenRouter terms of service may result in restriction or ban of your API key by OpenRouter.</p>
@@ -70,9 +81,9 @@
           <h1 class="setup-title">Privacy &amp; Data</h1>
           <p class="setup-sub">Understanding data routing and local persistence.</p>
           <ul class="setup-points">
-            <li><strong>Message &amp; Shell Routing:</strong> Commands and responses route directly between your browser and OpenRouter via HTTPS.</li>
-            <li><strong>Local Storage:</strong> Session logs and settings are saved strictly in your browser's IndexedDB storage.</li>
-            <li><strong>Key Protection:</strong> API keys are never logged, forwarded to third parties, or exposed in plaintext UI elements.</li>
+            <li><strong>Message &amp; Shell Routing:</strong> Commands and responses route directly between your browser and OpenRouter via secure HTTPS endpoints.</li>
+            <li><strong>Local Key &amp; Session Storage:</strong> API keys, session logs, and user preferences are saved strictly on your local device using IndexedDB. Termio operates without intermediate servers or analytics tracking.</li>
+            <li><strong>Key Control &amp; Privacy:</strong> Your API key is stored client-side only and is never logged, forwarded to third parties, or exposed in plaintext. You can remove your key or reset all local data at any time in Settings.</li>
           </ul>
         </div>
 

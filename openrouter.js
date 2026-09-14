@@ -75,22 +75,7 @@
   }
 
   function bashTool() {
-    return {
-      type: "openrouter:bash",
-      parameters: {
-        engine: "openrouter",
-        container_auto: {
-          network_policy: {
-            allowlist: ALLOWED_DOMAINS,
-          },
-        },
-      },
-      container_auto: {
-        network_policy: {
-          allowlist: ALLOWED_DOMAINS,
-        },
-      },
-    };
+    return shellTool();
   }
 
   function buildRequest(model, input, opts) {
@@ -98,7 +83,7 @@
     const body = {
       model: model,
       input: input,
-      tools: [shellTool(), bashTool()],
+      tools: [shellTool()],
       tool_choice: "auto",
       stream: true,
       instructions: TERMINAL_INSTRUCTIONS,
@@ -115,11 +100,68 @@
     };
   }
 
+  // Filter models to strictly include text chat models, excluding video, image, voice, audio, and transcript models.
+  function isTextChatModel(m) {
+    if (!m || !m.id) return false;
+    const id = String(m.id).toLowerCase();
+    const name = String(m.name || "").toLowerCase();
+    const description = String(m.description || "").toLowerCase();
+
+    const arch = m.architecture || {};
+    const modality = String(m.modality || arch.modality || "").toLowerCase();
+
+    const inputMods = Array.isArray(m.input_modalities) ? m.input_modalities
+      : Array.isArray(arch.input_modalities) ? arch.input_modalities : [];
+    const outputMods = Array.isArray(m.output_modalities) ? m.output_modalities
+      : Array.isArray(arch.output_modalities) ? arch.output_modalities : [];
+
+    const inputModsLower = inputMods.map(x => String(x).toLowerCase());
+    const outputModsLower = outputMods.map(x => String(x).toLowerCase());
+
+    if (outputModsLower.length > 0 && !outputModsLower.includes("text")) {
+      return false;
+    }
+    if (outputModsLower.some(mod => mod.includes("video") || mod.includes("image") || mod.includes("audio") || mod.includes("voice") || mod.includes("speech") || mod.includes("transcript"))) {
+      return false;
+    }
+
+    if (inputModsLower.some(mod => mod.includes("video") || mod.includes("audio") || mod.includes("voice") || mod.includes("speech") || mod.includes("transcript"))) {
+      return false;
+    }
+
+    if (modality) {
+      if (modality.includes("video") || modality.includes("image") || modality.includes("audio") || modality.includes("voice") || modality.includes("speech") || modality.includes("transcript")) {
+        return false;
+      }
+    }
+
+    const blockedKeywords = [
+      "happyhorse", "nanobana", "whisper", "transcript", "transcription",
+      "stable-diffusion", "sdxl", "flux", "dall-e", "midjourney", "imagen",
+      "cogvideo", "hunyuan-video", "ltx-video", "runway", "kling", "sora",
+      "tts", "stt", "musicgen", "bark", "sunno", "elevenlabs", "xtts"
+    ];
+
+    for (const kw of blockedKeywords) {
+      if (id.includes(kw) || name.includes(kw)) {
+        return false;
+      }
+    }
+
+    if (description.includes("image generation") || description.includes("generate images") ||
+        description.includes("video generation") || description.includes("generate videos") ||
+        description.includes("audio generation") || description.includes("transcript generation") ||
+        description.includes("speech recognition") || description.includes("text-to-speech")) {
+      return false;
+    }
+
+    return true;
+  }
+
   // ---- Models ----
   // Fetch the COMPLETE available catalog dynamically. No hardcoded model list.
-  // Uses output_modalities=all so every available model (text, image, audio, ...)
-  // is included and newly added models appear without code changes. Follows
-  // server pagination via links.next when present.
+  // Uses output_modalities=all so every available model is fetched and filtered
+  // dynamically for text chat compatibility. Follows server pagination via links.next when present.
   async function fetchModels(apiKey) {
     const headers = {};
     if (apiKey) headers["Authorization"] = "Bearer " + apiKey;
@@ -146,7 +188,9 @@
       for (const m of data) {
         if (m && m.id && !seen.has(m.id)) {
           seen.add(m.id);
-          out.push(m);
+          if (isTextChatModel(m)) {
+            out.push(m);
+          }
         }
       }
       const next = json.links && json.links.next;
@@ -370,6 +414,7 @@
     ALLOWED_DOMAINS,
     TERMINAL_INSTRUCTIONS,
     fetchModels,
+    isTextChatModel,
     selectDefaultModel,
     streamResponse,
     buildRequest,

@@ -11,14 +11,14 @@ rendered as terminal output.
 Plain HTML, CSS, and JavaScript. No frameworks, no build tooling.
 
 - `index.html` — setup, terminal, model picker, settings
-- `styles.css` — AMOLED terminal theme (mobile-first)
+- `styles.css` — Dark terminal theme (mobile-first)
 - `storage.js` — IndexedDB persistence (no localStorage)
 - `openrouter.js` — OpenRouter Responses API streaming client + model catalog
 - `app.js` — app logic
 
 ## How it works
 
-1. First run shows a fullscreen, true-black AMOLED setup experience that
+1. First run shows a fullscreen setup experience that
    introduces each step one by one; you provide your own OpenRouter API key.
 2. Models load dynamically from `GET /api/v1/models?output_modalities=all` and
    follow server pagination, so the complete available catalog is fetched with
