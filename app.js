@@ -1,4 +1,4 @@
-/* app.js — Termio app logic: setup, settings, terminal, model picker, multi-session history, security. */
+/* app.js — Termio app logic: setup wizard, settings, terminal, model catalog, multi-session history, security. */
 (function () {
   "use strict";
 
@@ -8,8 +8,9 @@
   const el = (id) => document.getElementById(id);
   const $setup = el("setup");
   const $app = el("app");
-  const $setupForm = el("setup-form");
   const $setupKey = el("setup-key");
+  const $wizardBackBtn = el("wizard-back-btn");
+  const $wizardNextBtn = el("wizard-next-btn");
 
   // topbar
   const $menuBtn = el("menu-btn");
@@ -30,6 +31,7 @@
   const $picker = el("picker");
   const $pickerClose = el("picker-close");
   const $pickerSearch = el("picker-search");
+  const $pickerProviderSelect = el("picker-provider-select");
   const $pickerCats = el("picker-cats");
   const $pickerList = el("picker-list");
   const $pickerCount = el("picker-count");
@@ -49,6 +51,11 @@
   const $setReset = el("set-reset");
   const $setChangelog = el("set-changelog");
   const $setVersion = el("set-version");
+  const $setNetworkAccessBtn = el("set-network-access-btn");
+
+  // network access
+  const $networkAccess = el("network-access");
+  const $networkAccessClose = el("network-access-close");
 
   // changelog
   const $changelog = el("changelog");
@@ -61,12 +68,12 @@
   const $historyList = el("history-list");
   const $historyNewBtn = el("history-new-btn");
 
-  // confirm modal
-  const $confirmModal = el("confirm-modal");
-  const $confirmTitle = el("confirm-title");
-  const $confirmMessage = el("confirm-message");
-  const $confirmCancelBtn = el("confirm-cancel-btn");
-  const $confirmOkBtn = el("confirm-ok-btn");
+  // warning screen
+  const $warningScreen = el("warning-screen");
+  const $warningTitle = el("warning-title");
+  const $warningMessage = el("warning-message");
+  const $warningCancelBtn = el("warning-cancel-btn");
+  const $warningConfirmBtn = el("warning-confirm-btn");
 
   // ---- app state ----
   const state = {
@@ -77,6 +84,7 @@
     models: [],            // catalog cache
     modelsCacheAt: 0,
     activeCat: "all",
+    activeProvider: "all",
     search: "",
     activeSession: null,   // active session object
     conversation: [],      // Responses API input history
@@ -86,6 +94,8 @@
   };
 
   let welcomeTimer = null;
+  let setupStep = 0;
+  const TOTAL_SETUP_STEPS = 5;
 
   const CAT_LABELS = { all: "All", free: "Free", cheap: "Cheap", fast: "Fast", premium: "Premium" };
 
@@ -94,12 +104,11 @@
     {
       version: "v1.0",
       items: [
-        "Fullscreen true-AMOLED redesign: setup, settings, model picker, history, and changelog are now dedicated fullscreen views.",
-        "Setup introduces each part one by one with smooth staged reveal animations on a true black background.",
-        "Model pricing now shows real per-token input and output rates directly from the OpenRouter catalog — no invented per-prompt estimates.",
-        "Model catalog fetched dynamically from OpenRouter (complete catalog, no hardcoded model list or prices).",
-        "Pill-shaped, rounded components throughout; refined top header and command input for smoother, responsive mobile use.",
-        "Version moved off the home screen into Settings → Version & Changelog.",
+        "Welcome to the first beta of Termio.",
+        "Dynamic OpenRouter model discovery with live per-token pricing and context lengths.",
+        "Hosted Linux container shell integration with container_auto network policy allowlist injection.",
+        "True AMOLED black theme with multi-step setup wizard, mobile-responsive topbar, and fullscreen settings.",
+        "Custom fullscreen warnings for dangerous commands, data resets, and key management.",
       ],
     },
   ];
@@ -136,7 +145,7 @@
   function fmtCtx(m) {
     const c = m.context_length || (m.top_provider && m.top_provider.context_length);
     if (!c) return "";
-    if (c >= 1000) return (c / 1000) + "K ctx";
+    if (c >= 1000) return Math.round(c / 1000) + "K ctx";
     return c + " ctx";
   }
 
@@ -159,34 +168,38 @@
     return state.models.find((m) => m.id === id) || null;
   }
 
-  // ---- Custom Confirmation Modal ----
-  function showConfirmModal({ title, message, confirmText = "Confirm", cancelText = "Cancel", danger = true }) {
+  function isMobileDevice() {
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth < 760;
+  }
+
+  // ---- Custom Fullscreen Warning UI ----
+  function showFullscreenWarning({ title, message, confirmText = "Proceed", cancelText = "Cancel", danger = true }) {
     return new Promise((resolve) => {
-      $confirmTitle.textContent = title || "Confirm Action";
-      $confirmMessage.textContent = message || "Are you sure you want to proceed?";
-      $confirmOkBtn.textContent = confirmText;
-      $confirmCancelBtn.textContent = cancelText;
+      $warningTitle.textContent = title || "Warning";
+      $warningMessage.textContent = message || "Are you sure you want to proceed?";
+      $warningConfirmBtn.textContent = confirmText;
+      $warningCancelBtn.textContent = cancelText;
 
       if (danger) {
-        $confirmOkBtn.className = "btn btn-danger";
+        $warningConfirmBtn.className = "btn btn-danger btn-pill btn-full";
       } else {
-        $confirmOkBtn.className = "btn btn-primary";
+        $warningConfirmBtn.className = "btn btn-primary btn-pill btn-full";
       }
 
-      $confirmModal.hidden = false;
+      $warningScreen.hidden = false;
 
       function cleanup(result) {
-        $confirmModal.hidden = true;
-        $confirmOkBtn.removeEventListener("click", onOk);
-        $confirmCancelBtn.removeEventListener("click", onCancel);
+        $warningScreen.hidden = true;
+        $warningConfirmBtn.removeEventListener("click", onOk);
+        $warningCancelBtn.removeEventListener("click", onCancel);
         resolve(result);
       }
 
       function onOk() { cleanup(true); }
       function onCancel() { cleanup(false); }
 
-      $confirmOkBtn.addEventListener("click", onOk);
-      $confirmCancelBtn.addEventListener("click", onCancel);
+      $warningConfirmBtn.addEventListener("click", onOk);
+      $warningCancelBtn.addEventListener("click", onCancel);
     });
   }
 
@@ -278,7 +291,7 @@
     scrollTerm();
   }
 
-  // ---- welcome animation ----
+  // ---- welcome message ----
   function renderWelcome(animate = false) {
     if (welcomeTimer) { clearTimeout(welcomeTimer); welcomeTimer = null; }
     if ($termOutput.children.length > 0) {
@@ -290,14 +303,15 @@
     $termWelcome.innerHTML = "";
 
     const lines = [
-      "TERMIO [OpenRouter Hosted Shell]",
-      "Connected to isolated Linux environment.",
+      "TERMIO",
+      state.apiKey ? "OpenRouter API: Connected" : "OpenRouter API: Not Configured",
+      "Shell Environment: Ready (Hosted Linux Sandbox)",
       "Enter a command or ask the terminal to begin."
     ];
 
     if (!animate) {
       $termWelcome.innerHTML = lines.map((l, i) =>
-        `<div class="${i === 0 ? 'term-welcome-line' : 'term-welcome-sub'}">${escapeHtml(l)}</div>`
+        `<div class="${i === 0 ? 'term-welcome-line' : i === 1 ? 'term-welcome-status' : 'term-welcome-sub'}">${escapeHtml(l)}</div>`
       ).join("");
       return;
     }
@@ -306,7 +320,7 @@
     let charIdx = 0;
     const lineNodes = lines.map((l, i) => {
       const div = document.createElement("div");
-      div.className = i === 0 ? "term-welcome-line" : "term-welcome-sub";
+      div.className = i === 0 ? "term-welcome-line" : i === 1 ? "term-welcome-status" : "term-welcome-sub";
       $termWelcome.appendChild(div);
       return div;
     });
@@ -323,7 +337,7 @@
       } else {
         lineIdx++;
         charIdx = 0;
-        welcomeTimer = setTimeout(typeNext, 40);
+        welcomeTimer = setTimeout(typeNext, 35);
       }
     }
     typeNext();
@@ -346,17 +360,72 @@
   }
 
   function showSetup() {
+    setupStep = 0;
+    renderSetupStep();
     $setup.hidden = false;
     $app.hidden = true;
     $picker.hidden = true;
     $settings.hidden = true;
     $historyModal.hidden = true;
     $changelog.hidden = true;
-    // Trigger the staged reveal animation by (re)applying the revealing class.
-    $setup.classList.remove("is-revealing");
-    void $setup.offsetWidth;
-    $setup.classList.add("is-revealing");
+    $networkAccess.hidden = true;
+    $warningScreen.hidden = true;
   }
+
+  function renderSetupStep() {
+    const steps = document.querySelectorAll(".wizard-step");
+    const dots = document.querySelectorAll(".wizard-step-dot");
+
+    steps.forEach((s, idx) => {
+      s.hidden = (idx !== setupStep);
+    });
+
+    dots.forEach((d, idx) => {
+      d.classList.toggle("active", idx === setupStep);
+    });
+
+    $wizardBackBtn.disabled = (setupStep === 0);
+    $wizardNextBtn.textContent = (setupStep === TOTAL_SETUP_STEPS - 1) ? "Get Started" : "Next";
+  }
+
+  $wizardBackBtn.addEventListener("click", () => {
+    if (setupStep > 0) {
+      setupStep--;
+      renderSetupStep();
+    }
+  });
+
+  $wizardNextBtn.addEventListener("click", async () => {
+    if (setupStep === 1) { // API key step
+      const keyVal = $setupKey.value.trim();
+      if (keyVal) {
+        state.apiKey = keyVal;
+        try { await Storage.setSetting("apiKey", keyVal); } catch (e) {}
+      }
+    }
+
+    if (setupStep < TOTAL_SETUP_STEPS - 1) {
+      setupStep++;
+      renderSetupStep();
+    } else {
+      // Final Ready step -> Finish
+      const keyVal = $setupKey.value.trim();
+      if (!state.apiKey && !keyVal) {
+        toast("Please enter an OpenRouter API key on Step 2");
+        setupStep = 1;
+        renderSetupStep();
+        return;
+      }
+      if (keyVal && !state.apiKey) {
+        state.apiKey = keyVal;
+        try { await Storage.setSetting("apiKey", keyVal); } catch (e) {}
+      }
+      try { await Storage.setSetting("setupDone", true); } catch (e) {}
+      $setupKey.value = "";
+      toast("Setup complete");
+      await showApp();
+    }
+  });
 
   async function showApp() {
     state.apiKey = Storage._mem.apiKey || null;
@@ -371,7 +440,6 @@
 
     renderModelPill();
 
-    // Load active session or create a new session
     const activeSessionId = Storage._mem.activeSessionId || null;
     let loaded = null;
     if (activeSessionId) {
@@ -384,14 +452,17 @@
       await startNewSession({ playWelcome: true });
     }
 
-    // load catalog in background
     loadModels().then(() => {
       if (state.modelId) {
         state.model = findModelById(state.modelId);
-        renderModelPill();
-      } else if (state.models.length) {
-        openPicker();
       }
+      if (!state.model) {
+        const defaultM = OpenRouter.selectDefaultModel(state.models);
+        if (defaultM) {
+          selectModel(defaultM, false);
+        }
+      }
+      renderModelPill();
     }).catch((e) => {
       console.warn("model load failed", e);
       toast("Could not load models");
@@ -401,7 +472,9 @@
   }
 
   function focusInput() {
-    if (!$picker.hidden || !$settings.hidden || !$historyModal.hidden || !$changelog.hidden || !$confirmModal.hidden) return;
+    if (isMobileDevice()) return;
+    if (!$app || $app.hidden) return;
+    if (!$picker.hidden || !$settings.hidden || !$historyModal.hidden || !$changelog.hidden || !$networkAccess.hidden || !$warningScreen.hidden) return;
     requestAnimationFrame(() => { try { $cmdInput.focus({ preventScroll: true }); } catch (e) {} });
   }
 
@@ -464,23 +537,7 @@
     }
   }
 
-  // ---- setup ----
-  $setupForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const key = $setupKey.value.trim();
-    if (!key) { toast("Enter your OpenRouter API key"); return; }
-    try {
-      await Storage.setSetting("apiKey", key);
-      await Storage.setSetting("setupDone", true);
-      $setupKey.value = "";
-      toast("Setup complete");
-      await showApp();
-    } catch (err) {
-      toast("Could not save settings");
-    }
-  });
-
-  // ---- models ----
+  // ---- models catalog & picker ----
   async function loadModels(force) {
     const now = Date.now();
     if (!force && state.models.length && now - state.modelsCacheAt < 5 * 60 * 1000) {
@@ -502,7 +559,6 @@
     $setModelName.textContent = m ? modelDisplayName(m) : (state.modelId || "Model…");
   }
 
-  // ---- picker ----
   function openPicker() {
     $picker.hidden = false;
     renderPicker();
@@ -522,12 +578,34 @@
     renderPickerList();
   });
 
+  $pickerProviderSelect.addEventListener("change", () => {
+    state.activeProvider = $pickerProviderSelect.value;
+    renderPickerList();
+  });
+
   function renderPicker() {
+    renderProviders();
     renderCats();
     renderPickerList();
-    $pickerCount.textContent = state.models.length
-      ? state.models.length + ""
-      : "";
+    $pickerCount.textContent = state.models.length ? state.models.length + "" : "";
+  }
+
+  function renderProviders() {
+    const providers = new Set();
+    for (const m of state.models) {
+      const p = OpenRouter.providerName(m);
+      if (p) providers.add(p);
+    }
+
+    const sorted = Array.from(providers).sort((a, b) => a.localeCompare(b));
+    $pickerProviderSelect.innerHTML = '<option value="all">All Providers</option>';
+    for (const prov of sorted) {
+      const opt = document.createElement("option");
+      opt.value = prov;
+      opt.textContent = prov;
+      if (state.activeProvider === prov) opt.selected = true;
+      $pickerProviderSelect.appendChild(opt);
+    }
   }
 
   function renderCats() {
@@ -560,6 +638,7 @@
     return state.models.filter((m) => {
       const cats = categorizeForList(m);
       if (state.activeCat !== "all" && !cats.includes(state.activeCat)) return false;
+      if (state.activeProvider !== "all" && OpenRouter.providerName(m) !== state.activeProvider) return false;
       if (!q) return true;
       const hay = ((m.id || "") + " " + (m.name || "") + " " + (m.description || "")).toLowerCase();
       return hay.indexOf(q) !== -1;
@@ -640,7 +719,7 @@
 
       item.appendChild(top);
       item.appendChild(meta);
-      item.addEventListener("click", () => selectModel(m));
+      item.addEventListener("click", () => selectModel(m, true));
       frag.appendChild(item);
     }
     if (list.length === 0) {
@@ -654,7 +733,8 @@
     $pickerList.appendChild(frag);
   }
 
-  async function selectModel(m) {
+  async function selectModel(m, notify = true) {
+    if (!m) return;
     state.model = m;
     state.modelId = m.id;
     if (state.activeSession) {
@@ -664,7 +744,7 @@
     try { await Storage.setSetting("model", m.id); } catch (e) {}
     renderModelPill();
     closePicker();
-    toast("Model: " + modelDisplayName(m));
+    if (notify) toast("Model: " + modelDisplayName(m));
   }
 
   // ---- history modal ----
@@ -697,7 +777,6 @@
     let sessions = [];
     try { sessions = await Storage.getAllSessions(); } catch (e) {}
 
-    // Filter out empty sessions (no commands run)
     const validSessions = sessions.filter((s) => {
       if (!s) return false;
       const cmdBlocks = (s.blocks || []).filter((b) => b && b.kind === "cmd");
@@ -774,7 +853,7 @@
       delBtn.textContent = "Delete";
       delBtn.addEventListener("click", async (e) => {
         e.stopPropagation();
-        const ok = await showConfirmModal({
+        const ok = await showFullscreenWarning({
           title: "Delete Session",
           message: `Delete session "${sess.title || "Session"}"? This action cannot be undone.`,
           confirmText: "Delete",
@@ -812,7 +891,6 @@
   $settings.addEventListener("click", (e) => { if (e.target === $settings) closeSettings(); });
 
   function openSettings() {
-    // SECURITY: NEVER populate $setKey.value with existing state.apiKey
     $setKey.value = "";
     updateKeyStatusBadge();
 
@@ -850,9 +928,9 @@
 
   $setKeyClear.addEventListener("click", async () => {
     if (!state.apiKey) { toast("No API key configured"); return; }
-    const ok = await showConfirmModal({
+    const ok = await showFullscreenWarning({
       title: "Clear API Key",
-      message: "Are you sure you want to remove your stored OpenRouter API key?",
+      message: "Are you sure you want to remove your stored OpenRouter API key from this device?",
       confirmText: "Remove Key",
       danger: true
     });
@@ -875,7 +953,7 @@
   });
 
   $setClearSession.addEventListener("click", async () => {
-    const ok = await showConfirmModal({
+    const ok = await showFullscreenWarning({
       title: "Start New Session",
       message: "Clear current terminal view and start a fresh session context?",
       confirmText: "New Session",
@@ -889,9 +967,9 @@
   });
 
   $setReset.addEventListener("click", async () => {
-    const ok = await showConfirmModal({
+    const ok = await showFullscreenWarning({
       title: "Reset All Termio Data",
-      message: "This will permanently delete all stored sessions, API keys, and settings. This cannot be undone.",
+      message: "This will permanently delete all stored sessions, API keys, model selections, and settings. This cannot be undone.",
       confirmText: "Reset All Data",
       danger: true
     });
@@ -909,10 +987,22 @@
       closePicker();
       closeHistory();
       closeChangelog();
+      closeNetworkAccess();
       showSetup();
       toast("All data reset");
     }
   });
+
+  // ---- network access page ----
+  $setNetworkAccessBtn.addEventListener("click", openNetworkAccess);
+  $networkAccessClose.addEventListener("click", closeNetworkAccess);
+
+  function openNetworkAccess() {
+    $networkAccess.hidden = false;
+  }
+  function closeNetworkAccess() {
+    $networkAccess.hidden = true;
+  }
 
   // ---- changelog ----
   $setChangelog.addEventListener("click", openChangelog);
@@ -950,6 +1040,12 @@
     $changelogList.appendChild(frag);
   }
 
+  // ---- dangerous commands check ----
+  function isDangerousCommand(cmd) {
+    const pattern = /\b(rm\s+-[rRf]+|sudo|mkfs|dd\s+if=|chmod\s+(-R\s+)?777|shutdown|reboot|:\{\s*:\|:&\s*\}|drop\s+database)\b/i;
+    return pattern.test(cmd);
+  }
+
   // ---- command execution ----
   $cmdForm.addEventListener("submit", (e) => {
     e.preventDefault();
@@ -973,6 +1069,25 @@
       return;
     }
 
+    if (isDangerousCommand(cmd)) {
+      const ok = await showFullscreenWarning({
+        title: "Dangerous Command Warning",
+        message: `You are attempting to execute a potentially destructive command:\n\n'${cmd}'\n\nAre you sure you want to proceed?`,
+        confirmText: "Execute Command",
+        cancelText: "Cancel Command",
+        danger: true,
+      });
+      if (!ok) {
+        if (state.prefs.showHeaders) {
+          const blockNodes = [mkCmdLine(cmd), mkOut("[command cancelled by user]", "out-dim")];
+          appendBlock(blockNodes);
+          appendBlockRecord({ kind: "cmd", text: cmd });
+          appendBlockRecord({ kind: "out", text: "[command cancelled by user]", cls: "out-dim" });
+        }
+        return;
+      }
+    }
+
     if (welcomeTimer) { clearTimeout(welcomeTimer); welcomeTimer = null; }
     $termWelcome.hidden = true;
 
@@ -980,7 +1095,6 @@
       await startNewSession({ playWelcome: false });
     }
 
-    // Auto update session title from first command
     if (state.activeSession.title === "New Session" || !state.activeSession.title) {
       state.activeSession.title = cmd.length > 36 ? cmd.slice(0, 36) + "…" : cmd;
     }
@@ -1050,14 +1164,12 @@
         });
       }
 
-      // Persist active session
       state.activeSession.conversation = state.conversation;
       state.activeSession.openrouterSessionId = state.sessionId;
       state.activeSession.updatedAt = Date.now();
       try { await Storage.saveSession(state.activeSession); } catch (e) {}
 
-      // Add to history log
-      try { await Storage.addHistory({ cmd, hadToolOutput, model: state.modelId, ts: Date.now() }); } catch (e) {}
+      try { await Storage.addHistory({ cmd, hadToolOutput: gotToolOutput, model: state.modelId, ts: Date.now() }); } catch (e) {}
 
     } catch (err) {
       running.remove();
@@ -1276,7 +1388,8 @@
   // ---- global key handling ----
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
-      if (!$confirmModal.hidden) { $confirmModal.hidden = true; return; }
+      if (!$warningScreen.hidden) { $warningScreen.hidden = true; return; }
+      if (!$networkAccess.hidden) { closeNetworkAccess(); return; }
       if (!$changelog.hidden) { closeChangelog(); return; }
       if (!$historyModal.hidden) { closeHistory(); return; }
       if (!$picker.hidden) { closePicker(); return; }

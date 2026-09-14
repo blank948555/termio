@@ -49,8 +49,48 @@
 
   const DONE_MARKER = "[" + "DONE]";
 
+  const ALLOWED_DOMAINS = [
+    "api.github.com",
+    "*.pythonhosted.org",
+    "pypi.org"
+  ];
+
   function shellTool() {
-    return { type: "openrouter:shell", parameters: { engine: "openrouter" } };
+    return {
+      type: "openrouter:shell",
+      parameters: {
+        engine: "openrouter",
+        container_auto: {
+          network_policy: {
+            allowlist: ALLOWED_DOMAINS,
+          },
+        },
+      },
+      container_auto: {
+        network_policy: {
+          allowlist: ALLOWED_DOMAINS,
+        },
+      },
+    };
+  }
+
+  function bashTool() {
+    return {
+      type: "openrouter:bash",
+      parameters: {
+        engine: "openrouter",
+        container_auto: {
+          network_policy: {
+            allowlist: ALLOWED_DOMAINS,
+          },
+        },
+      },
+      container_auto: {
+        network_policy: {
+          allowlist: ALLOWED_DOMAINS,
+        },
+      },
+    };
   }
 
   function buildRequest(model, input, opts) {
@@ -58,7 +98,7 @@
     const body = {
       model: model,
       input: input,
-      tools: [shellTool()],
+      tools: [shellTool(), bashTool()],
       tool_choice: "auto",
       stream: true,
       instructions: TERMINAL_INSTRUCTIONS,
@@ -87,7 +127,16 @@
     let url = MODELS_URL + "?output_modalities=all";
     const seen = new Set();
     for (let guard = 0; guard < 40; guard++) {
-      const res = await fetch(url, { headers });
+      let reqHeaders = {};
+      try {
+        const parsedUrl = new URL(url);
+        if (parsedUrl.hostname === "openrouter.ai" || parsedUrl.hostname.endsWith(".openrouter.ai")) {
+          reqHeaders = headers;
+        }
+      } catch (e) {
+        reqHeaders = headers;
+      }
+      const res = await fetch(url, { headers: reqHeaders });
       if (!res.ok) {
         const msg = await safeErr(res);
         throw new Error("models " + res.status + (msg ? ": " + msg : ""));
@@ -260,26 +309,72 @@
     }
   }
 
+  function perMillion(v) {
+    const n = toNum(v);
+    return n == null ? null : n * 1_000_000;
+  }
+
+  // Select a cheap default model suitable for normal requests under ~$0.30/M tokens.
+  function selectDefaultModel(models) {
+    if (!Array.isArray(models) || models.length === 0) return null;
+    const preferredCheap = [
+      "google/gemini-2.5-flash",
+      "google/gemini-flash-1.5",
+      "deepseek/deepseek-chat",
+      "meta-llama/llama-3.1-8b-instruct",
+      "qwen/qwen-2.5-72b-instruct"
+    ];
+
+    for (const prefId of preferredCheap) {
+      const match = models.find(m => m && m.id && (m.id === prefId || m.id.includes(prefId)));
+      if (match) {
+        const pIn = promptPricePerM(match);
+        if (pIn == null || pIn <= 0.30) return match;
+      }
+    }
+
+    const cheapModels = models.filter(m => {
+      const pIn = promptPricePerM(m);
+      return pIn != null && pIn <= 0.30;
+    });
+
+    if (cheapModels.length > 0) {
+      const free = cheapModels.find(m => isFree(m));
+      return free || cheapModels[0];
+    }
+
+    const sortedByPrice = models.slice().sort((a, b) => {
+      const pa = promptPricePerM(a) ?? 999;
+      const pb = promptPricePerM(b) ?? 999;
+      return pa - pb;
+    });
+
+    return sortedByPrice[0] || models[0];
+  }
+
   // ---- Model display helpers ----
   function shortName(m) {
-    const id = m.id || "";
+    const id = (m && m.id) || "";
     const slash = id.indexOf("/");
     const tail = slash >= 0 ? id.slice(slash + 1) : id;
     const colon = tail.indexOf(":");
     return colon >= 0 ? tail.slice(0, colon) : tail;
   }
   function providerName(m) {
-    const id = m.id || "";
+    const id = (m && m.id) || "";
     const slash = id.indexOf("/");
-    return slash >= 0 ? id.slice(0, slash) : "";
+    return slash >= 0 ? id.slice(0, slash) : "Other";
   }
 
   global.OpenRouter = {
+    ALLOWED_DOMAINS,
     TERMINAL_INSTRUCTIONS,
     fetchModels,
+    selectDefaultModel,
     streamResponse,
     buildRequest,
     shellTool,
+    bashTool,
     categorize,
     combinedPricePerM,
     priceOrderMetric,

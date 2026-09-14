@@ -9,44 +9,92 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <!-- ===================== SETUP (first run) =====================
-       Fullscreen true-black AMOLED. No card/box layout. Each part is
-       introduced one by one with smooth staged typing/reveal animations. -->
+  <!-- ===================== SETUP WIZARD (multi-step) ===================== -->
   <section id="setup" class="screen screen-setup" hidden>
-    <div class="setup-stage">
-      <div class="setup-hero" data-reveal>
-        <span class="setup-glyph" aria-hidden="true">&gt;_</span>
+    <div class="setup-wizard">
+      <header class="wizard-header">
+        <div class="brand-group">
+          <span class="setup-glyph" aria-hidden="true">&gt;_</span>
+          <span class="wizard-brand-title">Termio Setup</span>
+        </div>
+        <div class="wizard-progress">
+          <span class="wizard-step-dot active" data-step-dot="0"></span>
+          <span class="wizard-step-dot" data-step-dot="1"></span>
+          <span class="wizard-step-dot" data-step-dot="2"></span>
+          <span class="wizard-step-dot" data-step-dot="3"></span>
+          <span class="wizard-step-dot" data-step-dot="4"></span>
+        </div>
+      </header>
+
+      <div class="wizard-body">
+        <!-- Step 0: Welcome -->
+        <div class="wizard-step" data-step="0">
+          <h1 class="setup-title">Welcome to Termio</h1>
+          <p class="setup-sub">A dedicated browser terminal powered by OpenRouter hosted Shell.</p>
+          <ul class="setup-points">
+            <li>Termio runs real shell commands inside an isolated hosted Linux sandbox.</li>
+            <li>You bring your own OpenRouter API key. Termio never proxies or logs your keys.</li>
+            <li>Designed for true AMOLED black screens with dynamic model catalog discovery.</li>
+          </ul>
+        </div>
+
+        <!-- Step 1: OpenRouter API Key -->
+        <div class="wizard-step" data-step="1" hidden>
+          <h1 class="setup-title">OpenRouter API Key</h1>
+          <p class="setup-sub">Connect Termio to your OpenRouter account to access models and shell tools.</p>
+          <div class="setup-form">
+            <label class="field">
+              <span class="field-label">API Key</span>
+              <input id="setup-key" type="password" autocomplete="off" spellcheck="false" placeholder="sk-or-v1-…" />
+              <span class="field-hint">Your key is stored securely on this device only. Masked without show/eye buttons.</span>
+            </label>
+            <a id="get-key-link" href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-pill btn-full">
+              Get an OpenRouter API key
+            </a>
+          </div>
+        </div>
+
+        <!-- Step 2: Shell Warning -->
+        <div class="wizard-step" data-step="2" hidden>
+          <h1 class="setup-title">Shell Warning</h1>
+          <p class="setup-sub">Important compliance and container execution notice.</p>
+          <div class="setup-warning-box">
+            <p><strong>Hosted Container Environment:</strong> Shell operations run in a limited, remote Linux container provided by OpenRouter, not on your local device.</p>
+            <p><strong>Policy Compliance:</strong> Misuse of shell commands or violation of OpenRouter terms of service may result in restriction or ban of your API key by OpenRouter.</p>
+            <p><strong>Maintainer Non-Liability:</strong> Termio maintainers are non-liable for container session behavior, data loss, or account restrictions resulting from misuse.</p>
+          </div>
+        </div>
+
+        <!-- Step 3: Privacy & Data -->
+        <div class="wizard-step" data-step="3" hidden>
+          <h1 class="setup-title">Privacy &amp; Data</h1>
+          <p class="setup-sub">Understanding data routing and local persistence.</p>
+          <ul class="setup-points">
+            <li><strong>Message &amp; Shell Routing:</strong> Commands and responses route directly between your browser and OpenRouter via HTTPS.</li>
+            <li><strong>Local Storage:</strong> Session logs and settings are saved strictly in your browser's IndexedDB storage.</li>
+            <li><strong>Key Protection:</strong> API keys are never logged, forwarded to third parties, or exposed in plaintext UI elements.</li>
+          </ul>
+        </div>
+
+        <!-- Step 4: Ready -->
+        <div class="wizard-step" data-step="4" hidden>
+          <h1 class="setup-title">Ready</h1>
+          <p class="setup-sub">Configuration complete. Click "Get Started" to launch Termio.</p>
+          <div class="setup-ready-box">
+            <p class="ready-text">Connected and ready for terminal execution.</p>
+          </div>
+        </div>
       </div>
-      <h1 class="setup-title" data-reveal>Termio</h1>
-      <p class="setup-sub" data-reveal>A dedicated browser terminal powered by OpenRouter hosted Shell.</p>
 
-      <ul class="setup-points" data-reveal>
-        <li>Termio runs real shell commands inside a hosted Linux environment provided by OpenRouter.</li>
-        <li>You bring your own OpenRouter API key. Termio never bundles or proxies one.</li>
-        <li>Shell is a beta feature. It runs in a limited, isolated, hosted sandbox.</li>
-        <li>That environment is <strong>not</strong> your own computer. Files and state are container-scoped.</li>
-        <li>Using Shell and the selected model can consume OpenRouter credits and may incur charges.</li>
-        <li>Stored sessions and container data may be limited or temporary.</li>
-      </ul>
-
-      <form id="setup-form" class="setup-form" autocomplete="off" data-reveal>
-        <label class="field">
-          <span class="field-label">OpenRouter API key</span>
-          <input id="setup-key" type="password" inputmode="text" autocomplete="off" spellcheck="false"
-                 placeholder="sk-or-v1-…" required />
-          <span class="field-hint">Get one at openrouter.ai/keys. Stored only on this device.</span>
-        </label>
-
-        <button type="submit" class="btn btn-primary btn-pill btn-full">Continue</button>
-      </form>
-
-      <p class="setup-foot" data-reveal>By continuing you acknowledge the beta limits described above.</p>
+      <footer class="wizard-nav">
+        <button id="wizard-back-btn" type="button" class="btn btn-ghost btn-pill" disabled>Back</button>
+        <button id="wizard-next-btn" type="button" class="btn btn-primary btn-pill">Next</button>
+      </footer>
     </div>
   </section>
 
   <!-- ===================== MAIN APP ===================== -->
   <div id="app" class="app" hidden>
-    <!-- compact top bar -->
     <header class="topbar">
       <div class="topbar-left">
         <button id="history-btn" class="icon-btn icon-btn-glyph" type="button" aria-label="Session History" title="Session History">
@@ -77,19 +125,17 @@
       </div>
     </header>
 
-    <!-- terminal output -->
     <main id="term" class="term" aria-label="Terminal output" tabindex="-1">
       <div id="term-output" class="term-output"></div>
       <div id="term-welcome" class="term-welcome"></div>
     </main>
 
-    <!-- command input -->
     <footer class="inputbar">
       <span class="prompt" aria-hidden="true">$</span>
       <form id="cmd-form" class="cmd-form">
         <input id="cmd-input" class="cmd-input" type="text" autocomplete="off" autocapitalize="off"
                autocorrect="off" spellcheck="false" enterkeyhint="send"
-               placeholder="enter a command or ask the terminal…" aria-label="Command input" />
+               placeholder="Enter a command" aria-label="Command input" />
       </form>
     </footer>
   </div>
@@ -105,7 +151,12 @@
     </header>
     <div class="fs-controls">
       <input id="picker-search" class="picker-search" type="search" autocomplete="off"
-             spellcheck="false" placeholder="Search models…" aria-label="Search models" />
+             spellcheck="false" placeholder="Search models by name or provider…" aria-label="Search models" />
+      <div class="picker-filter-row">
+        <select id="picker-provider-select" class="picker-provider-select" aria-label="Filter by provider">
+          <option value="all">All Providers</option>
+        </select>
+      </div>
       <div id="picker-cats" class="picker-cats" role="tablist"></div>
     </div>
     <div id="picker-list" class="picker-list" role="listbox" aria-label="Available models"></div>
@@ -134,35 +185,12 @@
     </header>
 
     <div class="settings-body">
+      <!-- General -->
       <section class="settings-section">
-        <h3 class="settings-h">OpenRouter API Key</h3>
-        <div class="key-status-row">
-          <span class="field-label">Status</span>
-          <span id="key-status-badge" class="badge">Checking…</span>
+        <div class="settings-sec-head">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6a3.6 3.6 0 1 1 0-7.2 3.6 3.6 0 0 1 0 7.2z"/></svg>
+          <h3 class="settings-h">General</h3>
         </div>
-        <label class="field">
-          <span class="field-label">Update API key</span>
-          <div class="key-row">
-            <input id="set-key" type="password" autocomplete="off" spellcheck="false" placeholder="Enter new sk-or-v1-… key" />
-            <button id="set-key-save" class="btn btn-primary btn-pill" type="button">Save</button>
-          </div>
-          <span class="field-hint">Stored securely on this device only. Never displayed.</span>
-        </label>
-        <div class="key-actions">
-          <button id="set-key-clear" class="btn btn-ghost btn-pill btn-sm" type="button">Clear API Key</button>
-        </div>
-      </section>
-
-      <section class="settings-section">
-        <h3 class="settings-h">Model</h3>
-        <button id="set-model" class="model-pill model-pill-wide" type="button">
-          <span id="set-model-name" class="model-pill-name">Model…</span>
-          <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="m7 10 5 5 5-5z"/></svg>
-        </button>
-      </section>
-
-      <section class="settings-section">
-        <h3 class="settings-h">Terminal</h3>
         <label class="field field-inline row-pill">
           <span class="field-label">Clear screen on new command</span>
           <input id="set-clear" type="checkbox" class="switch" />
@@ -173,14 +201,61 @@
         </label>
       </section>
 
+      <!-- Models -->
       <section class="settings-section">
-        <h3 class="settings-h">Data &amp; Sessions</h3>
+        <div class="settings-sec-head">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 14.59L8.41 12 13 7.41V11h4v2h-4z"/></svg>
+          <h3 class="settings-h">Models</h3>
+        </div>
+        <button id="set-model" class="model-pill model-pill-wide" type="button">
+          <span id="set-model-name" class="model-pill-name">Model…</span>
+          <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="m7 10 5 5 5-5z"/></svg>
+        </button>
+      </section>
+
+      <!-- Shell -->
+      <section class="settings-section">
+        <div class="settings-sec-head">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm-8 14H4v-2h8v2zm8 0h-6v-2h6v2zm0-4H4V8h16v6z"/></svg>
+          <h3 class="settings-h">Shell</h3>
+        </div>
+        <button id="set-network-access-btn" class="row-pill row-pill-link" type="button">
+          <span class="row-pill-main">
+            <span class="row-pill-title">Network Access</span>
+            <span class="row-pill-sub">View allowed domain policies for shell containers</span>
+          </span>
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M9.4 6 8 7.4l4.6 4.6L8 16.6 9.4 18l6-6z"/></svg>
+        </button>
+      </section>
+
+      <!-- Privacy & Data -->
+      <section class="settings-section">
+        <div class="settings-sec-head">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/></svg>
+          <h3 class="settings-h">Privacy &amp; Data</h3>
+        </div>
+        <div class="key-status-row">
+          <span class="field-label">API Key Status</span>
+          <span id="key-status-badge" class="badge">Checking…</span>
+        </div>
+        <label class="field">
+          <span class="field-label">Update API key</span>
+          <div class="key-row">
+            <input id="set-key" type="password" autocomplete="off" spellcheck="false" placeholder="Enter new sk-or-v1-… key" />
+            <button id="set-key-save" class="btn btn-primary btn-pill" type="button">Save</button>
+          </div>
+        </label>
+        <button id="set-key-clear" class="btn btn-ghost btn-pill btn-full" type="button">Clear API Key</button>
         <button id="set-clear-session" class="btn btn-ghost btn-pill btn-full" type="button">Start New Session</button>
         <button id="set-reset" class="btn btn-danger btn-pill btn-full" type="button">Reset All Termio Data</button>
       </section>
 
+      <!-- About -->
       <section class="settings-section">
-        <h3 class="settings-h">About</h3>
+        <div class="settings-sec-head">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+          <h3 class="settings-h">About</h3>
+        </div>
         <button id="set-changelog" class="row-pill row-pill-link" type="button">
           <span class="row-pill-main">
             <span class="row-pill-title">Version &amp; Changelog</span>
@@ -188,12 +263,38 @@
           </span>
           <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M9.4 6 8 7.4l4.6 4.6L8 16.6 9.4 18l6-6z"/></svg>
         </button>
-        <p class="settings-note">
-          Shell runs commands in a limited, isolated, hosted Linux sandbox provided by OpenRouter.
-          It is not your own computer. Files and state are container-scoped and may be temporary.
-          Using Shell and the selected model can consume OpenRouter credits and may incur charges.
-        </p>
       </section>
+    </div>
+  </div>
+
+  <!-- ===================== NETWORK ACCESS (fullscreen) ===================== -->
+  <div id="network-access" class="screen fs-screen" role="dialog" aria-modal="true" aria-label="Network Access" hidden>
+    <header class="fs-head">
+      <button id="network-access-close" class="icon-btn" type="button" aria-label="Back">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M15.4 7.4 14 6l-6 6 6 6 1.4-1.4L10.8 12z"/></svg>
+      </button>
+      <h2 class="fs-title">Network Access</h2>
+      <span class="fs-spacer" aria-hidden="true"></span>
+    </header>
+    <div class="network-access-body">
+      <p class="settings-note">
+        Shell operations run inside an isolated OpenRouter container sandbox. Outbound network traffic is limited by container network policy configuration.
+      </p>
+      <h3 class="settings-h">Allowed Domains</h3>
+      <div class="domain-list">
+        <div class="domain-item">
+          <div class="domain-name">api.github.com</div>
+          <div class="domain-desc">GitHub REST API and Repository endpoints</div>
+        </div>
+        <div class="domain-item">
+          <div class="domain-name">*.pythonhosted.org</div>
+          <div class="domain-desc">Python Package Index repository hosts</div>
+        </div>
+        <div class="domain-item">
+          <div class="domain-name">pypi.org</div>
+          <div class="domain-desc">Python Package Index (PyPI) primary registry</div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -216,14 +317,21 @@
     </div>
   </div>
 
-  <!-- ===================== CUSTOM CONFIRMATION MODAL ===================== -->
-  <div id="confirm-modal" class="modal modal-dialog" role="dialog" aria-modal="true" aria-label="Confirmation" hidden>
-    <div class="confirm-panel">
-      <h3 id="confirm-title" class="confirm-title">Confirm Action</h3>
-      <p id="confirm-message" class="confirm-message">Are you sure you want to proceed?</p>
-      <div class="confirm-actions">
-        <button id="confirm-cancel-btn" class="btn btn-ghost btn-pill" type="button">Cancel</button>
-        <button id="confirm-ok-btn" class="btn btn-danger btn-pill" type="button">Confirm</button>
+  <!-- ===================== CUSTOM FULLSCREEN WARNING ===================== -->
+  <div id="warning-screen" class="screen fs-screen warning-screen" role="dialog" aria-modal="true" aria-label="Warning" hidden>
+    <div class="warning-container">
+      <div class="warning-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+          <line x1="12" y1="9" x2="12" y2="13"/>
+          <line x1="12" y1="17" x2="12.01" y2="17"/>
+        </svg>
+      </div>
+      <h2 id="warning-title" class="warning-title">Warning</h2>
+      <p id="warning-message" class="warning-message"></p>
+      <div class="warning-actions">
+        <button id="warning-cancel-btn" class="btn btn-ghost btn-pill btn-full" type="button">Cancel</button>
+        <button id="warning-confirm-btn" class="btn btn-danger btn-pill btn-full" type="button">Proceed</button>
       </div>
     </div>
   </div>
