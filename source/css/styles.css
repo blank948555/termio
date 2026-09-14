@@ -1,5 +1,38 @@
 /* Termio — Modern true-AMOLED terminal theme. Mobile-first, plain CSS.
-   Rounded, pill-shaped components. Fullscreen major interfaces. */
+   Rounded, pill-shaped components. Fullscreen major interfaces.
+
+   Table of contents:
+     1. Tokens & base
+        :root design tokens · global reset · base typography
+
+     2. Layout & app shell
+        - Fullscreen screens
+        - Setup Wizard
+
+     3. Reusable components
+        - Form fields
+        - Buttons
+        - Badges
+
+     4. App surface
+        - App Layout & Topbar
+        - Terminal Interface
+        - Input Bar
+
+     5. Fullscreen detail screens
+        - Model Picker
+        - Session History
+        - Settings Body
+        - Network Access
+        - Changelog
+        - Warning Screen
+        - Toast
+
+     6. Responsive & motion
+        - Responsive
+
+   Rules are kept in source order; no duplicate selectors. */
+
 
 :root {
   --bg: #000000;
@@ -52,6 +85,11 @@ button, input, select { font-family: var(--sans); }
 [hidden] { display: none !important; }
 
 ::selection { background: #2a2a35; color: var(--fg); }
+
+
+/* ==============================================================================
+   Layout & app shell
+   ============================================================================== */
 
 /* ---------- Fullscreen screens (setup / picker / settings / history / changelog / network / warning) ---------- */
 .screen {
@@ -317,6 +355,11 @@ button, input, select { font-family: var(--sans); }
 }
 .wizard-nav button { flex: 1; }
 
+
+/* ==============================================================================
+   Reusable components
+   ============================================================================== */
+
 /* ---------- Form fields ---------- */
 .field { display: grid; gap: 7px; width: 100%; }
 .field-label { font-size: 12.5px; color: var(--fg-2); font-weight: 500; }
@@ -430,6 +473,11 @@ input:focus, select:focus {
 .badge-none { color: var(--warn); border-color: #3a2c14; background: #18120a; }
 .badge-warn { color: var(--warn); border-color: #3a2c14; background: #18120a; }
 .badge-sm { font-size: 9.5px; padding: 2px 7px; }
+
+
+/* ==============================================================================
+   App surface
+   ============================================================================== */
 
 /* ---------- App Layout & Responsive Topbar ---------- */
 .app {
@@ -692,6 +740,11 @@ input:focus, select:focus {
   .stop-btn-label { display: none; }
   .stop-btn { padding: 4px 8px; }
 }
+
+
+/* ==============================================================================
+   Fullscreen detail screens
+   ============================================================================== */
 
 /* ---------- Model Picker controls & list ---------- */
 .picker-filter-row { display: flex; gap: 8px; width: 100%; }
@@ -1058,6 +1111,11 @@ input:focus, select:focus {
   animation: toastIn .2s var(--ease);
 }
 @keyframes toastIn { from { opacity: 0; transform: translate(-50%, 6px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+
+/* ==============================================================================
+   Responsive & motion
+   ============================================================================== */
 
 /* ---------- Responsive Adjustments ---------- */
 @media (min-width: 760px) {

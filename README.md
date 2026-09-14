@@ -10,11 +10,14 @@ rendered as terminal output.
 
 Plain HTML, CSS, and JavaScript. No frameworks, no build tooling.
 
-- `index.html` — setup, terminal, model picker, settings
-- `styles.css` — Dark terminal theme (mobile-first)
-- `storage.js` — IndexedDB persistence (no localStorage)
-- `openrouter.js` — OpenRouter Responses API streaming client + model catalog
-- `app.js` — app logic
+- `index.html` (root) — setup, terminal, model picker, settings
+- `source/app/app.js` — app logic
+- `source/js/openrouter.js` — OpenRouter Responses API streaming client + model catalog
+- `source/js/storage.js` — IndexedDB persistence (no localStorage)
+- `source/css/styles.css` — Dark terminal theme (mobile-first)
+
+> Open `index.html` in any modern browser, or serve the repo root statically.
+> The app references its assets under `source/`; keep the folder layout intact.
 
 ## How it works
 
@@ -45,5 +48,3 @@ Plain HTML, CSS, and JavaScript. No frameworks, no build tooling.
    input. Each request is capped to a single shell tool call, so a command that
    fails shows its real error and stops — it does not autonomously retry,
    diagnose, or try alternatives. A Stop button cancels any running generation.
-
-Open the `index.html` in any modern browser, or serve the folder statically.
