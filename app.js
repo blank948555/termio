@@ -113,14 +113,7 @@
     {
       version: "v1.0",
       items: [
-        "Termio is a browser terminal. You type a command and it runs in a real hosted Linux sandbox.",
-        "Runs any shell command and returns its real stdout, stderr, and exit code.",
-        "Powers the shell through OpenRouter models that support tools, loaded live from the catalog.",
-        "One command in, one command out. Runs exactly what you type, then waits for the next input.",
-        "Network access is a real on/off toggle that controls the sandbox's outbound connection.",
-        "Sessions and history are saved locally in your browser with IndexedDB.",
-        "Setup, settings, model picker, session history, and this changelog are dedicated fullscreen views.",
-        "Runs entirely in the browser from static files — no build step, no backend, no framework.",
+        "Termio is a browser-based terminal powered by OpenRouter that lets you run shell commands in a real hosted Linux sandbox directly from the web. It gives you an interactive command-line environment without needing a PC, local Linux installation, or terminal app, with persistent sessions, command history, model selection, and optional network access. Everything is wrapped in a simple terminal-focused interface built to work on both desktop and mobile.",
       ],
     },
   ];
