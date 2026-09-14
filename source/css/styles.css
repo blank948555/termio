@@ -747,18 +747,6 @@ input:focus, select:focus {
    ============================================================================== */
 
 /* ---------- Model Picker controls & list ---------- */
-.picker-filter-row { display: flex; gap: 8px; width: 100%; }
-.picker-provider-select {
-  background: var(--bg-2);
-  border: 1px solid var(--line-2);
-  color: var(--fg);
-  border-radius: var(--pill);
-  padding: 8px 14px;
-  font-size: 13px;
-  outline: none;
-  cursor: pointer;
-}
-
 .picker-cats {
   display: flex;
   gap: 7px;

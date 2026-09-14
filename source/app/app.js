@@ -32,7 +32,6 @@
   const $picker = el("picker");
   const $pickerClose = el("picker-close");
   const $pickerSearch = el("picker-search");
-  const $pickerProviderSelect = el("picker-provider-select");
   const $pickerCats = el("picker-cats");
   const $pickerList = el("picker-list");
   const $pickerCount = el("picker-count");
@@ -93,7 +92,6 @@
     models: [],            // catalog cache
     modelsCacheAt: 0,
     activeCat: "all",
-    activeProvider: "all",
     search: "",
     activeSession: null,   // active session object
     conversation: [],      // Responses API input history
@@ -748,34 +746,10 @@
     renderPickerList();
   });
 
-  $pickerProviderSelect.addEventListener("change", () => {
-    state.activeProvider = $pickerProviderSelect.value;
-    renderPickerList();
-  });
-
   function renderPicker() {
-    renderProviders();
     renderCats();
     renderPickerList();
     $pickerCount.textContent = state.models.length ? state.models.length + "" : "";
-  }
-
-  function renderProviders() {
-    const providers = new Set();
-    for (const m of state.models) {
-      const p = OpenRouter.providerName(m);
-      if (p) providers.add(p);
-    }
-
-    const sorted = Array.from(providers).sort((a, b) => a.localeCompare(b));
-    $pickerProviderSelect.innerHTML = '<option value="all">All Providers</option>';
-    for (const prov of sorted) {
-      const opt = document.createElement("option");
-      opt.value = prov;
-      opt.textContent = prov;
-      if (state.activeProvider === prov) opt.selected = true;
-      $pickerProviderSelect.appendChild(opt);
-    }
   }
 
   function renderCats() {
@@ -808,7 +782,6 @@
     return state.models.filter((m) => {
       const cats = categorizeForList(m);
       if (state.activeCat !== "all" && !cats.includes(state.activeCat)) return false;
-      if (state.activeProvider !== "all" && OpenRouter.providerName(m) !== state.activeProvider) return false;
       if (!q) return true;
       const hay = ((m.id || "") + " " + (m.name || "") + " " + (m.description || "")).toLowerCase();
       return hay.indexOf(q) !== -1;
